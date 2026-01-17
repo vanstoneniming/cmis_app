@@ -408,10 +408,10 @@ def load_student_list(uploaded_file, id_col=None, name_col=None, class_col=None,
         # 支持.xlsx和.xls格式
         read_options = {}
         if skiprows and skiprows > 0:
-            read_options['skiprows'] = skiprows
+            read_options['skiprows'] = int(skiprows)  # 确保是整数类型
             read_options['header'] = None  # 跳过后不使用第一行作为列名
         if skipfooter and skipfooter > 0:
-            read_options['skipfooter'] = skipfooter  # 跳过尾部行
+            read_options['skipfooter'] = int(skipfooter)  # 确保是整数类型，跳过尾部行
         
         # 获取所有工作表名称
         if uploaded_file.name.endswith('.xlsx'):
@@ -966,11 +966,11 @@ def main():
                 
                 read_opts = {}
                 if skiprows > 0:
-                    read_opts['skiprows'] = skiprows
+                    read_opts['skiprows'] = int(skiprows)  # 确保是整数类型
                     read_opts['header'] = None
                 # 预览时也考虑跳过尾部行（用于显示准确的数据）
                 if skipfooter > 0:
-                    read_opts['skipfooter'] = skipfooter
+                    read_opts['skipfooter'] = int(skipfooter)  # 确保是整数类型
                 
                 # 选择用于预览的工作表
                 preview_sheet = selected_sheet if selected_sheet else (sheet_names[0] if sheet_names else None)
@@ -1298,10 +1298,10 @@ def main():
                 
                 read_score_opts = {}
                 if score_skiprows > 0:
-                    read_score_opts['skiprows'] = score_skiprows
+                    read_score_opts['skiprows'] = int(score_skiprows)  # 确保是整数类型
                     read_score_opts['header'] = None
                 if score_skipfooter > 0:
-                    read_score_opts['skipfooter'] = score_skipfooter
+                    read_score_opts['skipfooter'] = int(score_skipfooter)  # 确保是整数类型
                 
                 if score_file.name.endswith('.xlsx'):
                     score_file.seek(0)
