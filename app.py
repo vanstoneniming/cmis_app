@@ -18,11 +18,12 @@ st.set_page_config(
 # 数据文件路径
 DATA_DIR = Path("data")
 DATA_FILE = DATA_DIR / "grades_data.pkl"
-DATA_DIR.mkdir(exist_ok=True)
 
 def save_data():
     """保存数据到本地文件"""
     try:
+        # 确保数据目录存在
+        DATA_DIR.mkdir(exist_ok=True)
         if st.session_state.get('grades_df') is not None:
             current_time = datetime.now().isoformat()
             data = {
@@ -38,19 +39,31 @@ def save_data():
             return True
         return False
     except Exception as e:
-        st.error(f"保存数据失败: {str(e)}")
+        # 在Streamlit上下文中才显示错误
+        try:
+            st.error(f"保存数据失败: {str(e)}")
+        except:
+            # 如果不在Streamlit上下文，只打印日志
+            print(f"保存数据失败: {str(e)}")
         return False
 
 def load_data():
     """从本地文件加载数据"""
     try:
+        # 确保数据目录存在
+        DATA_DIR.mkdir(exist_ok=True)
         if DATA_FILE.exists():
             with open(DATA_FILE, 'rb') as f:
                 data = pickle.load(f)
             return data.get('students_df'), data.get('grades_df'), data.get('last_saved')
         return None, None, None
     except Exception as e:
-        st.error(f"加载数据失败: {str(e)}")
+        # 在Streamlit上下文中才显示错误
+        try:
+            st.error(f"加载数据失败: {str(e)}")
+        except:
+            # 如果不在Streamlit上下文，只打印日志
+            print(f"加载数据失败: {str(e)}")
         return None, None, None
 
 def update_data_and_save(func, *args, **kwargs):
