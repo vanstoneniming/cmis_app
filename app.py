@@ -10,7 +10,7 @@ from pypinyin import lazy_pinyin, Style
 
 # 页面配置
 st.set_page_config(
-    page_title="CMIS成绩处理辅助工具",
+    page_title="CMIS数据合并工具",
     page_icon="📚",
     layout="wide"
 )
@@ -217,6 +217,36 @@ def identify_columns(df):
     
     return id_col, name_col, class_col, df_result
 
+def handle_duplicate_columns(df):
+    """处理DataFrame中的重复列名，自动重命名重复的列
+    返回: 处理后的DataFrame
+    """
+    df = df.copy()
+    if df.columns.duplicated().any():
+        # 有重复列名，需要处理
+        new_columns = []
+        column_counts = {}
+        
+        for col in df.columns:
+            base_col_name = str(col)
+            if base_col_name in new_columns:
+                # 列名重复，添加后缀
+                count = column_counts.get(base_col_name, 0) + 1
+                column_counts[base_col_name] = count
+                new_col_name = f"{base_col_name}_{count}"
+                # 确保新名称也不重复
+                while new_col_name in new_columns:
+                    count += 1
+                    new_col_name = f"{base_col_name}_{count}"
+                new_columns.append(new_col_name)
+            else:
+                new_columns.append(base_col_name)
+                column_counts[base_col_name] = 0
+        
+        df.columns = new_columns
+    
+    return df
+
 def detect_numeric_text_column(df, col):
     """检测列是否包含可转换为数字的文本值
     返回: (是否为数字文本列, 可转换的比例)
@@ -254,6 +284,9 @@ def normalize_dataframe_types(df):
     确保每列的类型一致性，避免混合类型导致的pyarrow错误
     """
     df = df.copy()
+    
+    # 首先统一所有列名为字符串类型，避免混合类型列名警告
+    df.columns = [str(col) for col in df.columns]
     
     # 需要保留数值类型的列名关键词
     numeric_keywords = ['评分', '分数', 'score', '成绩', '总分', '平均分', '数量', 'count']
@@ -427,6 +460,9 @@ def load_student_list(uploaded_file, id_col=None, name_col=None, class_col=None,
         else:
             df = all_dfs[0]
         
+        # 处理重复列名（在设置列名之前先处理pandas读取时可能产生的重复）
+        df = handle_duplicate_columns(df)
+        
         # 如果跳过了行，需要重新设置列名
         if skiprows and skiprows > 0:
             # 尝试将第一行作为列名
@@ -440,14 +476,32 @@ def load_student_list(uploaded_file, id_col=None, name_col=None, class_col=None,
                 
                 if has_name_keywords:
                     # 第一行看起来像列名，使用它作为列名
-                    # 清理NaN值，替换为默认列名
+                    # 清理NaN值，替换为默认列名，并处理重复列名
                     new_columns = []
+                    column_counts = {}  # 用于跟踪每个列名出现的次数
+                    
                     for i, val in enumerate(df.iloc[0]):
                         val_str = str(val).strip()
                         if pd.isna(val) or val_str == '' or val_str.lower() in ['nan', 'none', 'nat']:
-                            new_columns.append(f"列{i+1}")
+                            base_col_name = f"列{i+1}"
                         else:
-                            new_columns.append(val_str)
+                            base_col_name = val_str
+                        
+                        # 处理重复列名：如果列名已存在，添加后缀
+                        if base_col_name in new_columns:
+                            # 计算已使用的次数
+                            count = column_counts.get(base_col_name, 0) + 1
+                            column_counts[base_col_name] = count
+                            new_col_name = f"{base_col_name}_{count}"
+                            # 确保新名称也不重复
+                            while new_col_name in new_columns:
+                                count += 1
+                                new_col_name = f"{base_col_name}_{count}"
+                            new_columns.append(new_col_name)
+                        else:
+                            new_columns.append(base_col_name)
+                            column_counts[base_col_name] = 0
+                    
                     df.columns = new_columns
                     df = df[1:].reset_index(drop=True)
                 else:
@@ -484,7 +538,7 @@ def load_student_list(uploaded_file, id_col=None, name_col=None, class_col=None,
                 st.warning(f"⚠️ 自动使用列 '{name_col}' 作为姓名列")
             else:
                 # 显示所有可用的列名，帮助调试
-                available_cols = ", ".join([f"'{col}'" for col in df.columns[:15]])
+                available_cols = ", ".join([f"'{str(col)}'" for col in df.columns[:15]])
                 if len(df.columns) > 15:
                     available_cols += f" ... 共{len(df.columns)}列"
                 error_msg = f"无法识别姓名列，请确保Excel文件包含姓名信息。\n\n当前可用列名：\n{available_cols}"
@@ -582,18 +636,81 @@ def main():
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     
-    /* 按钮样式 */
+    /* 按钮样式 - 统一美观的样式 */
     .stButton > button {
-        border-radius: 8px;
-        padding: 0.6rem 1.8rem;
-        font-weight: 500;
-        transition: all 0.3s;
-        margin: 0.5rem 0;
+        border-radius: 6px;
+        padding: 0.5rem 1.2rem !important;
+        font-weight: 500 !important;
+        font-size: 0.95rem !important;
+        transition: all 0.2s ease;
+        margin: 0.3rem 0 !important;
+        white-space: nowrap;
+        width: 100% !important;
+        min-height: 2.5rem !important;
+        height: 2.5rem !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 0.3rem;
     }
     
     .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        transform: translateY(-1px);
+        box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    }
+    
+    .stButton > button:active {
+        transform: translateY(0);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    /* 主要按钮样式 - 使用Streamlit的data-testid属性 */
+    .stButton > button[data-testid="baseButton-primary"] {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        border: none !important;
+        color: white !important;
+    }
+    
+    .stButton > button[data-testid="baseButton-primary"]:hover {
+        background: linear-gradient(135deg, #5568d3 0%, #653a91 100%) !important;
+    }
+    
+    /* 下载按钮样式 - 与普通按钮完全统一 */
+    .stDownloadButton > button {
+        border-radius: 6px;
+        padding: 0.5rem 1.2rem !important;
+        font-weight: 500 !important;
+        font-size: 0.95rem !important;
+        transition: all 0.2s ease;
+        white-space: nowrap;
+        width: 100% !important;
+        min-height: 2.5rem !important;
+        height: 2.5rem !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 0.3rem;
+        margin: 0.3rem 0 !important;
+    }
+    
+    .stDownloadButton > button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    }
+    
+    /* 确保按钮容器对齐 */
+    .stButton,
+    .stDownloadButton {
+        display: flex;
+        align-items: stretch;
+    }
+    
+    /* 确保列中的按钮容器对齐 */
+    [data-testid="column"] .stButton,
+    [data-testid="column"] .stDownloadButton {
+        display: flex;
+        align-items: stretch;
+        height: 100%;
     }
     
     /* 指标卡片样式 */
@@ -667,6 +784,57 @@ def main():
     [data-testid="stDataFrameContainer"] {
         margin: 1.5rem 0;
     }
+    
+    /* 确保列容器使用flex布局，使同一行的列高度一致 */
+    .row-widget.stHorizontal {
+        display: flex !important;
+        align-items: stretch !important;
+    }
+    
+    /* 确保列中的卡片高度一致 */
+    [data-testid="column"] {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: stretch !important;
+    }
+    
+    [data-testid="column"] > div {
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 1 !important;
+        min-height: 100% !important;
+    }
+    
+    /* 确保卡片容器高度一致 */
+    [data-testid="column"] .element-container {
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 1 !important;
+        min-height: 100% !important;
+    }
+    
+    /* 确保markdown卡片高度一致并填充容器 */
+    [data-testid="column"] [data-testid="stMarkdownContainer"] {
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 1 !important;
+        min-height: 100% !important;
+    }
+    
+    [data-testid="column"] [data-testid="stMarkdownContainer"] > div {
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 1 !important;
+        min-height: 100% !important;
+    }
+    
+    /* 确保markdown卡片内的div也使用flex填充 */
+    [data-testid="column"] [data-testid="stMarkdownContainer"] > div > div {
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 1 !important;
+        min-height: 100% !important;
+    }
     </style>
     """, unsafe_allow_html=True)
     
@@ -674,8 +842,8 @@ def main():
     if st.session_state.students_df is None:
         col_title1, col_title2, col_title3 = st.columns([1, 3, 1])
         with col_title2:
-            st.markdown('<h1 class="main-title">📚 CMIS成绩处理辅助工具</h1>', unsafe_allow_html=True)
-            st.markdown('<p style="text-align: center; color: #666; margin-bottom: 2rem;">快速、便捷、准确、安全地将成绩按CMIS固定姓名顺序整理排序，同样适用于其他需要按固定顺序排序的Excel文件排序处理。</p>', unsafe_allow_html=True)
+            st.markdown('<h1 class="main-title">📚 CMIS数据合并工具</h1>', unsafe_allow_html=True)
+            st.markdown('<p style="text-align: center; color: #666; margin-bottom: 2rem;">快速、便捷地将两个Excel文件中顺序不同的数据合并起来，根据姓名或学号自动匹配，即使顺序不同也能正确合并。<br>开源地址：<a href="https://github.com/vanstoneniming/cmis_app.git" target="_blank" style="color: #667eea; text-decoration: none;">https://github.com/vanstoneniming/cmis_app.git</a></p>', unsafe_allow_html=True)
         
         st.markdown("---")
     
@@ -721,7 +889,7 @@ def main():
                         
                         if sheet_option == "导入所有工作表（每个工作表一个班级）":
                             selected_sheet = None  # None表示读取所有
-                            st.info(f"💡 将读取所有 {len(sheet_names)} 个工作表：{', '.join(sheet_names)}")
+                            st.info(f"💡 将读取所有 {len(sheet_names)} 个工作表：{', '.join(str(s) for s in sheet_names)}")
                         else:
                             selected_sheet = st.selectbox(
                                 "选择要导入的工作表",
@@ -879,9 +1047,7 @@ def main():
                     class_col = None if col_class == "自动识别" else col_class
                     
                     st.markdown("")
-                    col_load1, col_load2, col_load3 = st.columns([1, 2, 1])
-                    with col_load2:
-                        if st.button("✅ 加载学生名单", type="primary", use_container_width=True):
+                    if st.button("✅ 加载学生名单", type="primary", use_container_width=True):
                             pass
                             # 重置文件指针
                             uploaded_file.seek(0)
@@ -898,18 +1064,13 @@ def main():
                                     class_count = df[df['班级'] != '']['班级'].nunique()
                                     loaded_info.append(f"📚 {class_count} 个班级")
                                 
-                                # 统计已加载的评分数据
-                                if '评分' in df.columns:
-                                    has_score_count = df['评分'].notna().sum()
-                                    if has_score_count > 0:
-                                        loaded_info.append(f"📊 {has_score_count} 条评分记录")
-                                
                                 # 统计加载的列数
                                 total_cols = len(df.columns)
                                 loaded_info.append(f"📋 {total_cols} 列数据")
                                 
-                                st.success(" | ".join(loaded_info))
-                                st.info("💡 已保留Excel文件中的所有列和评分数据，如果文件中有评分会自动设置为已提交状态")
+                                # 将加载消息保存到session_state，以便在rerun后显示
+                                st.session_state.load_success_message = " | ".join(loaded_info)
+                                st.session_state.load_info_message = "💡 已加载基准文件，可以在主界面中上传第二个Excel文件进行合并"
                                 
                                 save_data()  # 自动保存
                                 st.rerun()
@@ -929,17 +1090,9 @@ def main():
                 except:
                     pass
             
-            # 手动保存按钮
-            if st.button("💾 手动保存", width='stretch', help="手动保存当前数据"):
-                if save_data():
-                    st.success("✅ 保存成功")
-                    st.session_state.last_saved_time = datetime.now().isoformat()
-                else:
-                    st.warning("⚠️ 没有数据可保存")
-            
             # 清除数据按钮
             st.markdown("---")
-            if st.button("🗑️ 清除所有数据", width='stretch', help="清除数据和本地文件"):
+            if st.button("🗑️ 清除所有数据", use_container_width=True, help="清除数据和本地文件"):
                 if DATA_FILE.exists():
                     os.remove(DATA_FILE)
                 st.session_state.students_df = None
@@ -948,25 +1101,19 @@ def main():
                 st.success("✅ 数据已清除")
                 st.rerun()
             
-            st.markdown("---")
-            st.header("📥 导出Excel")
-            
-            # 导出为Excel
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                st.session_state.grades_df.to_excel(writer, index=False, sheet_name='作业统计')
-            output.seek(0)
-            
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            st.download_button(
-                label="📥 导出Excel",
-                data=output,
-                file_name=f"作业统计_{timestamp}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
     
     # 主内容区域
     if st.session_state.students_df is None:
+        # 如果有加载成功的消息，先显示它
+        if st.session_state.get('load_success_message'):
+            st.success(st.session_state.load_success_message)
+            # 显示一次后清除，避免每次都显示
+            del st.session_state.load_success_message
+        if st.session_state.get('load_info_message'):
+            st.info(st.session_state.load_info_message)
+            # 显示一次后清除
+            del st.session_state.load_info_message
+        
         st.info("👈 请在左侧上传Excel学生名单文件开始使用")
         # 使用更美观的说明卡片
         st.markdown("""
@@ -977,108 +1124,110 @@ def main():
         </div>
         """, unsafe_allow_html=True)
         
-        col_guide1, col_guide2 = st.columns(2)
+        # 快速开始 - 浅蓝色背景，火箭图标
+        st.markdown("""
+        <div style="background: #f8f9fa; 
+                    padding: 1.8rem; 
+                    border-radius: 15px; 
+                    border-left: 4px solid #667eea;
+                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+                    margin-bottom: 1.5rem;
+                    transition: transform 0.2s ease;">
+            <div style="display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1rem;">
+                <span style="font-size: 2.2em;">🚀</span>
+                <h4 style="color: #667eea; margin: 0; font-size: 1.3em; font-weight: 600;">快速开始</h4>
+            </div>
+            <ul style="line-height: 2.2; color: #495057; margin: 0; padding-left: 1.5rem; font-size: 0.95em; list-style: none;">
+                <li style="margin-bottom: 0.8rem;">📤 <strong>上传基准文件</strong>：在左侧上传第一个Excel文件（作为基准顺序）</li>
+                <li style="margin-bottom: 0.8rem;">⚙️ <strong>列映射设置</strong>：系统会自动识别列，也可以手动选择</li>
+                <li style="margin-bottom: 0.8rem;">📥 <strong>导入并合并</strong>：上传第二个Excel文件，选择匹配列和要合并的列</li>
+                <li>✏️ <strong>编辑数据</strong>：在表格中直接编辑数据</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
         
-        with col_guide1:
-            # 快速开始 - 浅蓝色背景，火箭图标
-            st.markdown("""
-            <div style="background: #f8f9fa; 
-                        padding: 1.8rem; 
-                        border-radius: 15px; 
-                        border-left: 4px solid #667eea;
-                        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-                        margin-bottom: 1.5rem;
-                        transition: transform 0.2s ease;
-                        height: 100%;">
-                <div style="display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1rem;">
-                    <span style="font-size: 2.2em;">🚀</span>
-                    <h4 style="color: #667eea; margin: 0; font-size: 1.3em; font-weight: 600;">快速开始</h4>
-                </div>
-                <ul style="line-height: 2.2; color: #495057; margin: 0; padding-left: 1.5rem; font-size: 0.95em; list-style: none;">
-                    <li style="margin-bottom: 0.8rem;">📤 <strong>上传文件</strong>：在左侧上传包含学生信息的Excel文件</li>
-                    <li style="margin-bottom: 0.8rem;">⚙️ <strong>列映射设置</strong>：系统会自动识别列，也可以手动选择</li>
-                    <li style="margin-bottom: 0.8rem;">📥 <strong>批量导入成绩列</strong>：从Excel文件批量导入多个成绩列</li>
-                    <li>✏️ <strong>编辑成绩</strong>：在表格中直接编辑学生成绩</li>
-                </ul>
+        # 智能识别功能 - 浅蓝绿色背景，闪烁星星图标
+        st.markdown("""
+        <div style="background: #d1ecf1; 
+                    padding: 1.8rem; 
+                    border-radius: 15px; 
+                    border-left: 4px solid #0c5460;
+                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+                    margin-bottom: 1.5rem;">
+            <div style="display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1rem;">
+                <span style="font-size: 2.2em;">✨</span>
+                <h4 style="color: #0c5460; margin: 0; font-size: 1.3em; font-weight: 600;">智能识别功能</h4>
             </div>
-            """, unsafe_allow_html=True)
-            
-            # 文件格式要求 - 浅黄/橙色背景，文档图标
-            st.markdown("""
-            <div style="background: #fff3cd; 
-                        padding: 1.8rem; 
-                        border-radius: 15px; 
-                        border-left: 4px solid #ffc107;
-                        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-                        margin-bottom: 1.5rem;
-                        height: 100%;">
-                <div style="display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1rem;">
-                    <span style="font-size: 2.2em;">📋</span>
-                    <h4 style="color: #856404; margin: 0; font-size: 1.3em; font-weight: 600;">文件格式要求</h4>
-                </div>
-                <ul style="line-height: 2.2; color: #856404; margin: 0; padding-left: 1.5rem; font-size: 0.95em; list-style: none;">
-                    <li style="margin-bottom: 0.8rem;">✅ <strong>必须包含</strong>："姓名"列（或"Name"、"名字"）</li>
-                    <li style="margin-bottom: 0.8rem;">📝 <strong>可选包含</strong>："学号"列（自动生成唯一标识符）</li>
-                    <li style="margin-bottom: 0.8rem;">📚 <strong>可选包含</strong>："班级"列（支持按班级统计）</li>
-                    <li>💾 支持 <code style="background: rgba(255,255,255,0.8); padding: 2px 6px; border-radius: 4px;">.xlsx</code> 和 <code style="background: rgba(255,255,255,0.8); padding: 2px 6px; border-radius: 4px;">.xls</code> 格式</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
+            <ul style="line-height: 2.2; color: #0c5460; margin: 0; padding-left: 1.5rem; font-size: 0.95em; list-style: none;">
+                <li style="margin-bottom: 0.8rem;">🔍 <strong>自动识别</strong>姓名列、学号列、班级列</li>
+                <li style="margin-bottom: 0.8rem;">🆔 <strong>自动生成</strong>学号（格式：班级_序号 或 STU_序号）</li>
+                <li style="margin-bottom: 0.8rem;">📊 <strong>班级统计</strong>支持按班级进行筛选和统计</li>
+                <li>🎯 <strong>姓名匹配</strong>支持"姓名 (学号)"格式自动拆分</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
         
-        with col_guide2:
-            # 智能识别功能 - 浅蓝绿色背景，闪烁星星图标
-            st.markdown("""
-            <div style="background: #d1ecf1; 
-                        padding: 1.8rem; 
-                        border-radius: 15px; 
-                        border-left: 4px solid #0c5460;
-                        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-                        margin-bottom: 1.5rem;
-                        height: 100%;">
-                <div style="display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1rem;">
-                    <span style="font-size: 2.2em;">✨</span>
-                    <h4 style="color: #0c5460; margin: 0; font-size: 1.3em; font-weight: 600;">智能识别功能</h4>
-                </div>
-                <ul style="line-height: 2.2; color: #0c5460; margin: 0; padding-left: 1.5rem; font-size: 0.95em; list-style: none;">
-                    <li style="margin-bottom: 0.8rem;">🔍 <strong>自动识别</strong>姓名列、学号列、班级列</li>
-                    <li style="margin-bottom: 0.8rem;">🆔 <strong>自动生成</strong>学号（格式：班级_序号 或 STU_序号）</li>
-                    <li style="margin-bottom: 0.8rem;">📊 <strong>班级统计</strong>支持按班级进行筛选和统计</li>
-                    <li>🎯 <strong>姓名匹配</strong>支持"姓名 (学号)"格式自动拆分</li>
-                </ul>
+        # 文件格式要求 - 浅黄/橙色背景，文档图标
+        st.markdown("""
+        <div style="background: #fff3cd; 
+                    padding: 1.8rem; 
+                    border-radius: 15px; 
+                    border-left: 4px solid #ffc107;
+                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+                    margin-bottom: 1.5rem;">
+            <div style="display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1rem;">
+                <span style="font-size: 2.2em;">📋</span>
+                <h4 style="color: #856404; margin: 0; font-size: 1.3em; font-weight: 600;">文件格式要求</h4>
             </div>
-            """, unsafe_allow_html=True)
-            
-            # 使用技巧 - 浅绿色背景，灯泡图标
-            st.markdown("""
-            <div style="background: #d4edda; 
-                        padding: 1.8rem; 
-                        border-radius: 15px; 
-                        border-left: 4px solid #28a745;
-                        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-                        margin-bottom: 1.5rem;
-                        height: 100%;">
-                <div style="display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1rem;">
-                    <span style="font-size: 2.2em;">💡</span>
-                    <h4 style="color: #155724; margin: 0; font-size: 1.3em; font-weight: 600;">使用技巧</h4>
-                </div>
-                <ul style="line-height: 2.2; color: #155724; margin: 0; padding-left: 1.5rem; font-size: 0.95em; list-style: none;">
-                    <li style="margin-bottom: 0.8rem;">⌨️ 使用 <kbd style="background: rgba(255,255,255,0.8); padding: 3px 8px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">Tab</kbd> 键快速切换单元格</li>
-                    <li style="margin-bottom: 0.8rem;">📊 批量导入时支持选择多个成绩列</li>
-                    <li style="margin-bottom: 0.8rem;">💾 数据会自动保存，无需担心丢失</li>
-                    <li>⏭️ 支持跳过文件头部和尾部的无用行</li>
-                </ul>
+            <ul style="line-height: 2.2; color: #856404; margin: 0; padding-left: 1.5rem; font-size: 0.95em; list-style: none;">
+                <li style="margin-bottom: 0.8rem;">✅ <strong>必须包含</strong>："姓名"列（或"Name"、"名字"）</li>
+                <li style="margin-bottom: 0.8rem;">📝 <strong>可选包含</strong>："学号"列（自动生成唯一标识符）</li>
+                <li style="margin-bottom: 0.8rem;">📚 <strong>可选包含</strong>："班级"列（支持按班级统计）</li>
+                <li>💾 支持 <code style="background: rgba(255,255,255,0.8); padding: 2px 6px; border-radius: 4px;">.xlsx</code> 和 <code style="background: rgba(255,255,255,0.8); padding: 2px 6px; border-radius: 4px;">.xls</code> 格式</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # 使用技巧 - 浅绿色背景，灯泡图标
+        st.markdown("""
+        <div style="background: #d4edda; 
+                    padding: 1.8rem; 
+                    border-radius: 15px; 
+                    border-left: 4px solid #28a745;
+                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+                    margin-bottom: 1.5rem;">
+            <div style="display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1rem;">
+                <span style="font-size: 2.2em;">💡</span>
+                <h4 style="color: #155724; margin: 0; font-size: 1.3em; font-weight: 600;">使用技巧</h4>
             </div>
-            """, unsafe_allow_html=True)
+            <ul style="line-height: 2.2; color: #155724; margin: 0; padding-left: 1.5rem; font-size: 0.95em; list-style: none;">
+                <li style="margin-bottom: 0.8rem;">⌨️ 使用 <kbd style="background: rgba(255,255,255,0.8); padding: 3px 8px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">Tab</kbd> 键快速切换单元格</li>
+                <li style="margin-bottom: 0.8rem;">📊 批量导入时支持选择多个数据列</li>
+                <li style="margin-bottom: 0.8rem;">💾 数据会自动保存，无需担心丢失</li>
+                <li>⏭️ 支持跳过文件头部和尾部的无用行</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
     else:
         # 有数据时，不再显示标题和描述
-        # 批量导入成绩列（直接展开，不使用折叠面板）
-        st.markdown("**📥 从Excel导入成绩列**")
-        st.info("💡 上传包含成绩的Excel文件，系统会自动匹配学生并导入成绩列")
+        # 如果有加载成功的消息，先显示它
+        if st.session_state.get('load_success_message'):
+            st.success(st.session_state.load_success_message)
+            # 显示一次后清除，避免每次都显示
+            del st.session_state.load_success_message
+        if st.session_state.get('load_info_message'):
+            st.info(st.session_state.load_info_message)
+            # 显示一次后清除
+            del st.session_state.load_info_message
+        
+        # 批量导入数据列（直接展开，不使用折叠面板）
+        st.markdown("**📥 从Excel导入数据列**")
+        st.info("💡 上传第二个Excel文件，系统会根据匹配列自动匹配并导入数据列")
         
         score_file = st.file_uploader(
-            "上传评分Excel文件",
+            "上传Excel文件",
             type=['xlsx', 'xls'],
-            help="Excel至少应包含姓名或学号列，以及至少一个成绩列",
+            help="Excel至少应包含姓名或学号列（用于匹配），以及至少一个要合并的数据列",
             key="score_upload"
         )
         
@@ -1150,18 +1299,43 @@ def main():
                         for cell in first_row
                     )
                     if has_keywords:
-                        # 清理NaN值，替换为默认列名
+                        # 清理NaN值，替换为默认列名，并处理重复列名
                         new_columns = []
+                        column_counts = {}  # 用于跟踪每个列名出现的次数
+                        
                         for i, val in enumerate(score_df.iloc[0]):
                             val_str = str(val).strip()
                             if pd.isna(val) or val_str == '' or val_str.lower() in ['nan', 'none', 'nat']:
-                                new_columns.append(f"列{i+1}")
+                                base_col_name = f"列{i+1}"
                             else:
-                                new_columns.append(val_str)
+                                base_col_name = val_str
+                            
+                            # 处理重复列名：如果列名已存在，添加后缀
+                            if base_col_name in new_columns:
+                                # 计算已使用的次数
+                                count = column_counts.get(base_col_name, 0) + 1
+                                column_counts[base_col_name] = count
+                                new_col_name = f"{base_col_name}_{count}"
+                                # 确保新名称也不重复
+                                while new_col_name in new_columns:
+                                    count += 1
+                                    new_col_name = f"{base_col_name}_{count}"
+                                new_columns.append(new_col_name)
+                            else:
+                                new_columns.append(base_col_name)
+                                column_counts[base_col_name] = 0
+                        
                         score_df.columns = new_columns
                         score_df = score_df[1:].reset_index(drop=True)
                     else:
                         score_df.columns = [f"列{i+1}" for i in range(len(score_df.columns))]
+                
+                # 无论是否跳行，都统一将所有列名转换为字符串类型
+                # 这样可以避免数字列名（如 56）与字符串列名（如 "56"）不匹配的问题
+                score_df.columns = [str(col) for col in score_df.columns]
+                
+                # 处理重复列名（这会将所有列名统一为字符串）
+                score_df = handle_duplicate_columns(score_df)
                 
                 # 规范化数据类型，避免pyarrow错误
                 score_df = normalize_dataframe_types(score_df)
@@ -1185,9 +1359,9 @@ def main():
                     help="💡 建议选择学号列进行匹配，可避免重名问题。如果选择姓名列且存在重名，系统会使用第一个匹配的学生并给出警告。"
                 )
                 
-                # 多选成绩列
-                st.markdown("#### 选择成绩列（可多选）")
-                st.caption("💡 每个成绩列将作为独立列添加到学生数据表中")
+                # 多选数据列
+                st.markdown("#### 选择数据列（可多选）")
+                st.caption("💡 每个数据列将作为独立列添加到基准文件中")
                 
                 # 自动识别可能的成绩列（排除匹配列）
                 # 先获取已经是数字类型的列
@@ -1213,10 +1387,10 @@ def main():
                 score_options = score_candidates + [col for col in other_cols if col != match_col]
                 
                 selected_score_cols = st.multiselect(
-                    "选择成绩列（可多选，每个列将作为独立列添加）*",
+                    "选择数据列（可多选，每个列将作为独立列添加）*",
                     options=score_options,
                     default=score_candidates if score_candidates else None,
-                    help="可以选择多个成绩列，每个列都会作为独立的列添加到学生数据中",
+                    help="可以选择多个数据列，每个列都会作为独立的列添加到基准文件中",
                     label_visibility="visible"
                 )
                 
@@ -1236,9 +1410,9 @@ def main():
                     preview_info = []
                     for score_col in selected_score_cols:
                         non_null_count = score_df[score_col].notna().sum()
-                        preview_info.append(f"- **{score_col}**: {non_null_count} 个有效成绩")
+                        preview_info.append(f"- **{str(score_col)}**: {non_null_count} 个有效成绩")
                     st.info("\n".join(preview_info))
-                    st.info(f"💡 已过滤数据：仅保留匹配列 '{match_col}' 和 {len(selected_score_cols)} 个成绩列")
+                    st.info(f"💡 已过滤数据：仅保留匹配列 '{match_col}' 和 {len(selected_score_cols)} 个数据列")
                     
                     st.markdown("")  # 按钮前增加间距
                 
@@ -1427,9 +1601,9 @@ def main():
                 
                 col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
                 with col_btn2:
-                    if st.button("✅ 导入成绩列", type="primary", use_container_width=True):
+                    if st.button("✅ 导入数据列", type="primary", use_container_width=True):
                         if not selected_score_cols:
-                            st.error("⚠️ 请至少选择一个成绩列")
+                            st.error("⚠️ 请至少选择一个数据列")
                         elif not match_col:
                             st.error("⚠️ 请选择匹配列（姓名或学号列）")
                         else:
@@ -1450,15 +1624,30 @@ def main():
                                 for score_col in selected_score_cols:
                                     col_added = False
                                     
-                                    # 如果该列已存在，询问是否覆盖
-                                    if score_col in st.session_state.grades_df.columns:
+                                    # 处理列名重复：如果列名已存在，自动重命名
+                                    final_col_name = str(score_col)
+                                    if final_col_name in st.session_state.grades_df.columns:
+                                        # 列已存在，自动添加后缀重命名
+                                        counter = 1
+                                        while f"{final_col_name}_{counter}" in st.session_state.grades_df.columns:
+                                            counter += 1
+                                        final_col_name = f"{final_col_name}_{counter}"
+                                        st.warning(f"⚠️ 列名 '{score_col}' 已存在，自动重命名为 '{final_col_name}'")
+                                    
+                                    # 如果列名不同，需要创建新列
+                                    if final_col_name != str(score_col):
+                                        # 需要重命名，先创建新列
+                                        st.session_state.grades_df[final_col_name] = None
+                                        col_added = True
+                                        added_cols.append(final_col_name)
+                                    elif final_col_name not in st.session_state.grades_df.columns:
+                                        # 新建列，初始值为None
+                                        st.session_state.grades_df[final_col_name] = None
+                                        col_added = True
+                                        added_cols.append(final_col_name)
+                                    else:
                                         # 列已存在，直接更新
                                         col_added = True
-                                    else:
-                                        # 新建列，初始值为None
-                                        st.session_state.grades_df[score_col] = None
-                                        col_added = True
-                                        added_cols.append(score_col)
                                     
                                     # 导入数据（使用过滤后的数据框，只包含匹配列和选择的成绩列）
                                     for idx, row in score_df_filtered.iterrows():
@@ -1466,7 +1655,19 @@ def main():
                                         if pd.isna(match_value) or match_value == '':
                                             continue
                                         
-                                        score_value = row[score_col]
+                                        # 使用原始的score_col从数据框中获取值
+                                        # 确保score_col是字符串类型，因为列名已经统一转换为字符串类型
+                                        score_col_str = str(score_col)
+                                        try:
+                                            score_value = row[score_col_str]
+                                        except KeyError:
+                                            # 如果字符串列名不存在，尝试使用原始列名（向后兼容）
+                                            try:
+                                                score_value = row[score_col]
+                                            except KeyError:
+                                                # 列名不存在，跳过此行
+                                                unmatched_rows.append(f"第{idx+1}行：列 '{score_col}' 不存在")
+                                                continue
                                         
                                         # 根据用户选择的匹配列进行精确匹配（严格按选择的列匹配，不做自动转换）
                                         match_mask = None
@@ -1527,36 +1728,36 @@ def main():
                                                         final_value = None
                                                     else:
                                                         final_value = score_str
-                                                    st.session_state.grades_df.loc[match_mask, score_col] = final_value
+                                                    st.session_state.grades_df.loc[match_mask, final_col_name] = final_value
                                                     updated_count += 1
                                                 else:
                                                     # 如果是NaN，直接设为None
-                                                    st.session_state.grades_df.loc[match_mask, score_col] = None
+                                                    st.session_state.grades_df.loc[match_mask, final_col_name] = None
                                             else:
                                                 # 数值列：尝试转换为数字
                                                 if pd.notna(score_value):
                                                     score_str = str(score_value).strip()
                                                     try:
                                                         score_float = float(score_str)
-                                                        st.session_state.grades_df.loc[match_mask, score_col] = score_float
+                                                        st.session_state.grades_df.loc[match_mask, final_col_name] = score_float
                                                         updated_count += 1
                                                     except (ValueError, TypeError):
                                                         # 如果无法转换为数字，但仍保留文本值（而不是跳过）
                                                         # 这样可以支持混合类型的列
                                                         final_value = score_str if score_str not in ['', 'nan', 'None', 'NaN', 'NaT'] else None
-                                                        st.session_state.grades_df.loc[match_mask, score_col] = final_value
+                                                        st.session_state.grades_df.loc[match_mask, final_col_name] = final_value
                                                         updated_count += 1
                                                 else:
                                                     # 如果是NaN，保持为None
-                                                    st.session_state.grades_df.loc[match_mask, score_col] = None
+                                                    st.session_state.grades_df.loc[match_mask, final_col_name] = None
                                 
                                 # 不再设置作业状态（已移除作业状态列）
                                 
                                 save_data()  # 自动保存
                                 
-                                success_msg = f"✅ 成功匹配 {matched_count} 名学生，更新 {updated_count} 条成绩记录！"
+                                success_msg = f"✅ 成功匹配 {matched_count} 名学生，更新 {updated_count} 条数据记录！"
                                 if added_cols:
-                                    success_msg += f"\n新增成绩列：{', '.join(added_cols)}"
+                                    success_msg += f"\n新增数据列：{', '.join(str(col) for col in added_cols)}"
                                 
                                 if unmatched_rows:
                                     success_msg += f"\n\n⚠️ 未匹配 {len(unmatched_rows)} 行："
@@ -1649,15 +1850,32 @@ def main():
             key="grade_editor"
         )
         
-        # 保存按钮 - 使用更好的布局
+        # 保存和导出按钮 - 使用更好的布局，确保对齐
         st.markdown("")
-        col_save1, col_save2, col_save3 = st.columns([2, 1, 2])
+        col_save1, col_save2, col_save3, col_save4 = st.columns([1, 1, 1, 1])
+        
         with col_save2:
             if st.button("💾 保存更改", type="primary", use_container_width=True):
                 st.session_state.grades_df = edited_df
                 save_data()  # 自动保存
                 st.success("✅ 保存成功！数据已自动保存")
                 st.rerun()
+        
+        with col_save3:
+            # 导出为Excel
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                st.session_state.grades_df.to_excel(writer, index=False, sheet_name='数据统计')
+            output.seek(0)
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            st.download_button(
+                label="📥 导出Excel",
+                data=output,
+                file_name=f"数据统计_{timestamp}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
 
 if __name__ == "__main__":
     main()
