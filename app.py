@@ -60,15 +60,25 @@ def update_data_and_save(func, *args, **kwargs):
     return result
 
 # 初始化session state
+# Streamlit Cloud 部署时不自动加载本地数据文件，避免携带测试数据
 if 'students_df' not in st.session_state:
-    # 尝试加载已保存的数据
-    loaded_students, loaded_grades, last_saved = load_data()
-    if loaded_students is not None and loaded_grades is not None:
-        st.session_state.students_df = loaded_students
-        st.session_state.grades_df = loaded_grades
-        st.session_state.data_loaded = True
-        st.session_state.last_saved_time = last_saved
+    # 检查是否在 Streamlit Cloud 环境（通过环境变量判断）
+    is_streamlit_cloud = os.environ.get('STREAMLIT_SHARING_MODE') == 'true' or os.environ.get('STREAMLIT_SERVER_PORT')
+    
+    # 只在非 Streamlit Cloud 环境尝试加载已保存的数据
+    if not is_streamlit_cloud:
+        loaded_students, loaded_grades, last_saved = load_data()
+        if loaded_students is not None and loaded_grades is not None:
+            st.session_state.students_df = loaded_students
+            st.session_state.grades_df = loaded_grades
+            st.session_state.data_loaded = True
+            st.session_state.last_saved_time = last_saved
+        else:
+            st.session_state.students_df = None
+            st.session_state.grades_df = None
+            st.session_state.data_loaded = False
     else:
+        # Streamlit Cloud 环境，不加载本地数据
         st.session_state.students_df = None
         st.session_state.grades_df = None
         st.session_state.data_loaded = False

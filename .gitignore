@@ -42,6 +42,8 @@ Thumbs.db
 *.xls
 *.csv
 !sample_*.xlsx
+*.db
+*.pkl
 
 # 日志
 *.log
