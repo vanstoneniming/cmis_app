@@ -1900,6 +1900,6 @@ def main():
                 use_container_width=True
             )
 
-if __name__ == "__main__":
-    main()
+# Streamlit 会自动运行 main() 函数，不需要 if __name__ == "__main__" 块
+# 使用 streamlit run app.py 命令启动应用
 
