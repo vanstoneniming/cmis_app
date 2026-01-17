@@ -72,36 +72,38 @@ def update_data_and_save(func, *args, **kwargs):
     save_data()
     return result
 
-# 初始化session state
-# Streamlit Cloud 部署时不自动加载本地数据文件，避免携带测试数据
-if 'students_df' not in st.session_state:
-    # 检查是否在 Streamlit Cloud 环境（通过环境变量判断）
-    is_streamlit_cloud = os.environ.get('STREAMLIT_SHARING_MODE') == 'true' or os.environ.get('STREAMLIT_SERVER_PORT')
-    
-    # 只在非 Streamlit Cloud 环境尝试加载已保存的数据
-    if not is_streamlit_cloud:
-        loaded_students, loaded_grades, last_saved = load_data()
-        if loaded_students is not None and loaded_grades is not None:
-            st.session_state.students_df = loaded_students
-            st.session_state.grades_df = loaded_grades
-            st.session_state.data_loaded = True
-            st.session_state.last_saved_time = last_saved
+# 初始化session state的函数
+# 将初始化移到main()函数内部，避免在模块导入时访问Streamlit上下文
+def init_session_state():
+    """初始化session state，避免在模块级别访问Streamlit上下文"""
+    # Streamlit Cloud 部署时不自动加载本地数据文件，避免携带测试数据
+    if 'students_df' not in st.session_state:
+        # 检查是否在 Streamlit Cloud 环境（通过环境变量判断）
+        is_streamlit_cloud = os.environ.get('STREAMLIT_SHARING_MODE') == 'true' or os.environ.get('STREAMLIT_SERVER_PORT')
+        
+        # 只在非 Streamlit Cloud 环境尝试加载已保存的数据
+        if not is_streamlit_cloud:
+            loaded_students, loaded_grades, last_saved = load_data()
+            if loaded_students is not None and loaded_grades is not None:
+                st.session_state.students_df = loaded_students
+                st.session_state.grades_df = loaded_grades
+                st.session_state.data_loaded = True
+                st.session_state.last_saved_time = last_saved
+            else:
+                st.session_state.students_df = None
+                st.session_state.grades_df = None
+                st.session_state.data_loaded = False
         else:
+            # Streamlit Cloud 环境，不加载本地数据
             st.session_state.students_df = None
             st.session_state.grades_df = None
             st.session_state.data_loaded = False
-    else:
-        # Streamlit Cloud 环境，不加载本地数据
-        st.session_state.students_df = None
+
+    if 'grades_df' not in st.session_state:
         st.session_state.grades_df = None
+
+    if 'data_loaded' not in st.session_state:
         st.session_state.data_loaded = False
-
-if 'grades_df' not in st.session_state:
-    st.session_state.grades_df = None
-
-
-if 'data_loaded' not in st.session_state:
-    st.session_state.data_loaded = False
 
 def detect_name_id_format(value):
     """检测值是否为"姓名 (学号)"格式
@@ -399,6 +401,10 @@ def load_student_list(uploaded_file, id_col=None, name_col=None, class_col=None,
         sheet_name: 工作表名称（None表示读取所有工作表并合并）
     """
     try:
+        # 确保skiprows和skipfooter是整数类型
+        skiprows = int(skiprows) if skiprows else 0
+        skipfooter = int(skipfooter) if skipfooter else 0
+        
         # 支持.xlsx和.xls格式
         read_options = {}
         if skiprows and skiprows > 0:
@@ -632,6 +638,9 @@ def load_student_list(uploaded_file, id_col=None, name_col=None, class_col=None,
         return None
 
 def main():
+    # 初始化session state（必须在Streamlit上下文中执行）
+    init_session_state()
+    
     # 使用自定义CSS美化界面
     st.markdown("""
     <style>
@@ -951,6 +960,10 @@ def main():
                     )
                 
                 # 读取预览数据（考虑跳过行数、尾部行数和工作表）
+                # 确保skiprows和skipfooter是整数类型
+                skiprows = int(skiprows) if skiprows else 0
+                skipfooter = int(skipfooter) if skipfooter else 0
+                
                 read_opts = {}
                 if skiprows > 0:
                     read_opts['skiprows'] = skiprows
@@ -1278,6 +1291,10 @@ def main():
                         key="score_import_skipfooter",
                         help="跳过文件尾部的无用行（如汇总、统计等）"
                     )
+                
+                # 确保skiprows和skipfooter是整数类型
+                score_skiprows = int(score_skiprows) if score_skiprows else 0
+                score_skipfooter = int(score_skipfooter) if score_skipfooter else 0
                 
                 read_score_opts = {}
                 if score_skiprows > 0:
@@ -1900,6 +1917,8 @@ def main():
                 use_container_width=True
             )
 
-# Streamlit 会自动运行 main() 函数，不需要 if __name__ == "__main__" 块
-# 使用 streamlit run app.py 命令启动应用
+# 在文件末尾调用 main() 函数
+# Streamlit 会从上到下执行所有代码，包括这个函数调用
+# 注意：必须使用 streamlit run app.py 命令启动，不能直接用 python app.py
+main()
 

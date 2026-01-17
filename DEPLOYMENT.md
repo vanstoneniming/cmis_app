@@ -328,19 +328,28 @@
    pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
    ```
 
-2. **或使用宝塔的 Python 项目管理器**
-   - 进入"软件商店" → 搜索"Python项目管理器" → 安装
-   - 进入"Python项目管理器" → 点击"添加Python项目"
-   - 配置如下：
-     - **项目名称**: `cmis_app`
-     - **项目路径**: `/www/wwwroot/cmis_app`
-     - **Python版本**: 选择已安装的 Python 3.8+ 版本
-     - **项目类型**: 选择"其他"
-     - **启动文件**: `app.py`
-     - **启动方式**: 选择"命令行"
-     - **运行目录**: `/www/wwwroot/cmis_app`
-     - **启动命令**: `/www/wwwroot/cmis_app/venv/bin/streamlit run app.py --server.port=8501 --server.address=0.0.0.0`
-   - 点击"提交"创建项目
+2. **或使用宝塔的 Python 项目管理器（不推荐）**
+   - ⚠️ **注意**: Python项目管理器可能没有"启动命令"配置项，且不适合Streamlit应用
+   - 如果必须使用，需要创建启动脚本（见下方说明）
+   - **强烈建议**: 直接使用"进程守护管理器"（见步骤3），更稳定且易管理
+   
+   **如果必须使用Python项目管理器，创建启动脚本：**
+   ```bash
+   # 在服务器终端执行
+   cat > /www/wwwroot/cmis_app/start.sh << 'EOF'
+   #!/bin/bash
+   cd /www/wwwroot/cmis_app
+   exec /www/server/pyporject_evn/cmis_app_venv/bin/streamlit run /www/wwwroot/cmis_app/app.py --server.port=8501 --server.address=0.0.0.0
+   EOF
+   chmod +x /www/wwwroot/cmis_app/start.sh
+   ```
+   
+   然后在Python项目管理器中：
+   - **项目名称**: `cmis_app`
+   - **项目路径**: `/www/wwwroot/cmis_app`
+   - **Python版本**: 选择已安装的 Python 3.8+ 版本
+   - **启动文件**: `start.sh`（使用上面创建的启动脚本）
+   - **运行目录**: `/www/wwwroot/cmis_app`
 
 #### 步骤3：使用进程守护管理器（推荐方式）
 
@@ -353,7 +362,9 @@
      - **名称**: `cmis_app`
      - **启动用户**: `root` 或您的用户名
      - **运行目录**: `/www/wwwroot/cmis_app`
-     - **启动命令**: `/www/wwwroot/cmis_app/venv/bin/streamlit run app.py --server.port=8501 --server.address=0.0.0.0`
+     - **启动命令**: `/www/server/pyporject_evn/cmis_app_venv/bin/streamlit run /www/wwwroot/cmis_app/app.py --server.port=8501 --server.address=0.0.0.0`
+       - **注意**: 虚拟环境路径请根据实际情况修改，可通过 `which streamlit` 查找
+       - **或者使用**: `python3 -m streamlit run /www/wwwroot/cmis_app/app.py --server.port=8501 --server.address=0.0.0.0`
      - **进程数量**: `1`
    - 点击"确认"创建守护进程
    - 点击"启动"启动应用
