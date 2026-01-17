@@ -447,7 +447,7 @@ def load_student_list(uploaded_file, id_col=None, name_col=None, class_col=None,
                     # 如果失败，尝试手动处理skipfooter
                     uploaded_file.seek(0)
                     if 'skipfooter' in read_options:
-                        skipfooter_val = read_options.pop('skipfooter')
+                        skipfooter_val = int(read_options.pop('skipfooter', 0))
                         df = pd.read_excel(uploaded_file, sheet_name=sheet, engine='openpyxl', **read_options)
                         # 手动删除尾部行
                         if skipfooter_val > 0 and len(df) > skipfooter_val:
@@ -458,7 +458,7 @@ def load_student_list(uploaded_file, id_col=None, name_col=None, class_col=None,
                 uploaded_file.seek(0)
                 # xlrd引擎不支持skipfooter，需要手动处理
                 if 'skipfooter' in read_options:
-                    skipfooter_val = read_options.pop('skipfooter')
+                    skipfooter_val = int(read_options.pop('skipfooter', 0))
                     df = pd.read_excel(uploaded_file, sheet_name=sheet, engine='xlrd', **read_options)
                     # 手动删除尾部行
                     if skipfooter_val > 0 and len(df) > skipfooter_val:
@@ -981,8 +981,8 @@ def main():
                         # 注意：nrows和skipfooter可能冲突，所以先读取更多行，再处理skipfooter
                         if 'skipfooter' in read_opts and 'nrows' in read_opts:
                             # 先读取更多行，然后手动处理
-                            skipfooter_val = read_opts.pop('skipfooter')
-                            nrows_val = read_opts.pop('nrows', 15)
+                            skipfooter_val = int(read_opts.pop('skipfooter', 0))
+                            nrows_val = int(read_opts.pop('nrows', 15))
                             temp_df = pd.read_excel(uploaded_file, sheet_name=preview_sheet, engine='openpyxl', **read_opts)
                             # 删除尾部行
                             if skipfooter_val > 0 and len(temp_df) > skipfooter_val:
@@ -995,7 +995,7 @@ def main():
                         uploaded_file.seek(0)
                         # 如果失败，手动处理skipfooter
                         if 'skipfooter' in read_opts:
-                            skipfooter_val = read_opts.pop('skipfooter')
+                            skipfooter_val = int(read_opts.pop('skipfooter', 0))
                             preview_df = pd.read_excel(uploaded_file, sheet_name=preview_sheet, engine='openpyxl', nrows=20, **read_opts)
                             if skipfooter_val > 0 and len(preview_df) > skipfooter_val:
                                 preview_df = preview_df.iloc[:-skipfooter_val].head(15).reset_index(drop=True)
@@ -1005,7 +1005,7 @@ def main():
                     uploaded_file.seek(0)
                     # xlrd不支持skipfooter，需要手动处理
                     if 'skipfooter' in read_opts:
-                        skipfooter_val = read_opts.pop('skipfooter')
+                        skipfooter_val = int(read_opts.pop('skipfooter', 0))
                         # 先读取更多行，然后删除尾部行
                         preview_df = pd.read_excel(uploaded_file, sheet_name=preview_sheet, engine='xlrd', nrows=20, **read_opts)
                         if skipfooter_val > 0 and len(preview_df) > skipfooter_val:
@@ -1312,7 +1312,7 @@ def main():
                         score_file.seek(0)
                         # 如果失败，尝试手动处理skipfooter
                         if 'skipfooter' in read_score_opts:
-                            skipfooter_val = read_score_opts.pop('skipfooter')
+                            skipfooter_val = int(read_score_opts.pop('skipfooter', 0))
                             score_df = pd.read_excel(score_file, engine='openpyxl', **read_score_opts)
                             # 手动删除尾部行
                             if skipfooter_val > 0 and len(score_df) > skipfooter_val:
@@ -1323,7 +1323,7 @@ def main():
                     score_file.seek(0)
                     # xlrd引擎不支持skipfooter，需要手动处理
                     if 'skipfooter' in read_score_opts:
-                        skipfooter_val = read_score_opts.pop('skipfooter')
+                        skipfooter_val = int(read_score_opts.pop('skipfooter', 0))
                         score_df = pd.read_excel(score_file, engine='xlrd', **read_score_opts)
                         # 手动删除尾部行
                         if skipfooter_val > 0 and len(score_df) > skipfooter_val:
