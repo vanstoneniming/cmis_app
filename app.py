@@ -756,6 +756,28 @@ def main():
         margin-bottom: 1rem;
     }
     
+    /* 确保数字输入框显示 +/- 按钮（让浏览器使用默认样式，不覆盖） */
+    /* 只在必要时确保按钮可见，不强制改变样式 */
+    .stNumberInput input[type='number'] {
+        /* 不设置 -webkit-appearance: none，保持默认行为 */
+    }
+    
+    /* 确保 spin 按钮始终可见（不隐藏） */
+    .stNumberInput input[type='number']::-webkit-inner-spin-button,
+    .stNumberInput input[type='number']::-webkit-outer-spin-button {
+        opacity: 1 !important;
+        display: block !important;
+    }
+    
+    /* 悬停和聚焦时也保持可见 */
+    .stNumberInput input[type='number']:hover::-webkit-inner-spin-button,
+    .stNumberInput input[type='number']:hover::-webkit-outer-spin-button,
+    .stNumberInput input[type='number']:focus::-webkit-inner-spin-button,
+    .stNumberInput input[type='number']:focus::-webkit-outer-spin-button {
+        opacity: 1 !important;
+        display: block !important;
+    }
+    
     /* 表格样式 */
     .dataframe {
         border-radius: 8px;
@@ -972,6 +994,12 @@ def main():
                 if skipfooter > 0:
                     read_opts['skipfooter'] = int(skipfooter)  # 确保是整数类型
                 
+                # 再次确保 read_opts 中所有数值都是整数类型（双重保险）
+                if 'skiprows' in read_opts:
+                    read_opts['skiprows'] = int(read_opts['skiprows'])
+                if 'skipfooter' in read_opts:
+                    read_opts['skipfooter'] = int(read_opts['skipfooter'])
+                
                 # 选择用于预览的工作表
                 preview_sheet = selected_sheet if selected_sheet else (sheet_names[0] if sheet_names else None)
                 
@@ -983,37 +1011,73 @@ def main():
                             # 先读取更多行，然后手动处理
                             skipfooter_val = int(read_opts.pop('skipfooter', 0))
                             nrows_val = int(read_opts.pop('nrows', 15))
-                            temp_df = pd.read_excel(uploaded_file, sheet_name=preview_sheet, engine='openpyxl', **read_opts)
+                            # 确保 read_opts 中所有参数都是正确的类型
+                            safe_opts = {}
+                            if 'skiprows' in read_opts:
+                                safe_opts['skiprows'] = int(read_opts['skiprows'])
+                            if 'header' in read_opts:
+                                safe_opts['header'] = read_opts['header']
+                            temp_df = pd.read_excel(uploaded_file, sheet_name=preview_sheet, engine='openpyxl', **safe_opts)
                             # 删除尾部行
                             if skipfooter_val > 0 and len(temp_df) > skipfooter_val:
                                 temp_df = temp_df.iloc[:-skipfooter_val].reset_index(drop=True)
                             # 取前nrows行
                             preview_df = temp_df.head(nrows_val)
                         else:
-                            preview_df = pd.read_excel(uploaded_file, sheet_name=preview_sheet, engine='openpyxl', nrows=15, **read_opts)
+                            # 确保 read_opts 中所有参数都是正确的类型
+                            safe_opts = {}
+                            if 'skiprows' in read_opts:
+                                safe_opts['skiprows'] = int(read_opts['skiprows'])
+                            if 'header' in read_opts:
+                                safe_opts['header'] = read_opts['header']
+                            preview_df = pd.read_excel(uploaded_file, sheet_name=preview_sheet, engine='openpyxl', nrows=15, **safe_opts)
                     except Exception as e:
                         uploaded_file.seek(0)
                         # 如果失败，手动处理skipfooter
                         if 'skipfooter' in read_opts:
                             skipfooter_val = int(read_opts.pop('skipfooter', 0))
-                            preview_df = pd.read_excel(uploaded_file, sheet_name=preview_sheet, engine='openpyxl', nrows=20, **read_opts)
+                            # 确保 read_opts 中所有参数都是正确的类型
+                            safe_opts = {}
+                            if 'skiprows' in read_opts:
+                                safe_opts['skiprows'] = int(read_opts['skiprows'])
+                            if 'header' in read_opts:
+                                safe_opts['header'] = read_opts['header']
+                            preview_df = pd.read_excel(uploaded_file, sheet_name=preview_sheet, engine='openpyxl', nrows=20, **safe_opts)
                             if skipfooter_val > 0 and len(preview_df) > skipfooter_val:
                                 preview_df = preview_df.iloc[:-skipfooter_val].head(15).reset_index(drop=True)
                         else:
-                            preview_df = pd.read_excel(uploaded_file, sheet_name=preview_sheet, engine='openpyxl', nrows=15, **read_opts)
+                            # 确保 read_opts 中所有参数都是正确的类型
+                            safe_opts = {}
+                            if 'skiprows' in read_opts:
+                                safe_opts['skiprows'] = int(read_opts['skiprows'])
+                            if 'header' in read_opts:
+                                safe_opts['header'] = read_opts['header']
+                            preview_df = pd.read_excel(uploaded_file, sheet_name=preview_sheet, engine='openpyxl', nrows=15, **safe_opts)
                 elif uploaded_file.name.endswith('.xls'):
                     uploaded_file.seek(0)
                     # xlrd不支持skipfooter，需要手动处理
                     if 'skipfooter' in read_opts:
                         skipfooter_val = int(read_opts.pop('skipfooter', 0))
+                        # 确保 read_opts 中所有参数都是正确的类型
+                        safe_opts = {}
+                        if 'skiprows' in read_opts:
+                            safe_opts['skiprows'] = int(read_opts['skiprows'])
+                        if 'header' in read_opts:
+                            safe_opts['header'] = read_opts['header']
                         # 先读取更多行，然后删除尾部行
-                        preview_df = pd.read_excel(uploaded_file, sheet_name=preview_sheet, engine='xlrd', nrows=20, **read_opts)
+                        preview_df = pd.read_excel(uploaded_file, sheet_name=preview_sheet, engine='xlrd', nrows=20, **safe_opts)
                         if skipfooter_val > 0 and len(preview_df) > skipfooter_val:
                             preview_df = preview_df.iloc[:-skipfooter_val].head(15).reset_index(drop=True)
                         else:
                             preview_df = preview_df.head(15)
                     else:
-                        preview_df = pd.read_excel(uploaded_file, sheet_name=preview_sheet, engine='xlrd', nrows=15, **read_opts)
+                        # 确保 read_opts 中所有参数都是正确的类型
+                        safe_opts = {}
+                        if 'skiprows' in read_opts:
+                            safe_opts['skiprows'] = int(read_opts['skiprows'])
+                        if 'header' in read_opts:
+                            safe_opts['header'] = read_opts['header']
+                        preview_df = pd.read_excel(uploaded_file, sheet_name=preview_sheet, engine='xlrd', nrows=15, **safe_opts)
                 else:
                     preview_df = None
                 
