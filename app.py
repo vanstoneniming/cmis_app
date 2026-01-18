@@ -441,30 +441,58 @@ def load_student_list(uploaded_file, id_col=None, name_col=None, class_col=None,
             if uploaded_file.name.endswith('.xlsx'):
                 uploaded_file.seek(0)
                 try:
+                    # 确保所有参数都是正确的类型
+                    safe_read_opts = {}
+                    if 'skiprows' in read_options:
+                        safe_read_opts['skiprows'] = int(read_options['skiprows'])
+                    if 'skipfooter' in read_options:
+                        safe_read_opts['skipfooter'] = int(read_options['skipfooter'])
+                    if 'header' in read_options:
+                        safe_read_opts['header'] = read_options['header']
                     # openpyxl支持skipfooter参数
-                    df = pd.read_excel(uploaded_file, sheet_name=sheet, engine='openpyxl', **read_options)
+                    df = pd.read_excel(uploaded_file, sheet_name=sheet, engine='openpyxl', **safe_read_opts)
                 except Exception as e:
                     # 如果失败，尝试手动处理skipfooter
                     uploaded_file.seek(0)
                     if 'skipfooter' in read_options:
                         skipfooter_val = int(read_options.pop('skipfooter', 0))
-                        df = pd.read_excel(uploaded_file, sheet_name=sheet, engine='openpyxl', **read_options)
+                        safe_read_opts = {}
+                        if 'skiprows' in read_options:
+                            safe_read_opts['skiprows'] = int(read_options['skiprows'])
+                        if 'header' in read_options:
+                            safe_read_opts['header'] = read_options['header']
+                        df = pd.read_excel(uploaded_file, sheet_name=sheet, engine='openpyxl', **safe_read_opts)
                         # 手动删除尾部行
                         if skipfooter_val > 0 and len(df) > skipfooter_val:
                             df = df.iloc[:-skipfooter_val].reset_index(drop=True)
                     else:
-                        df = pd.read_excel(uploaded_file, sheet_name=sheet, **read_options)
+                        safe_read_opts = {}
+                        if 'skiprows' in read_options:
+                            safe_read_opts['skiprows'] = int(read_options['skiprows'])
+                        if 'header' in read_options:
+                            safe_read_opts['header'] = read_options['header']
+                        df = pd.read_excel(uploaded_file, sheet_name=sheet, **safe_read_opts)
             elif uploaded_file.name.endswith('.xls'):
                 uploaded_file.seek(0)
                 # xlrd引擎不支持skipfooter，需要手动处理
                 if 'skipfooter' in read_options:
                     skipfooter_val = int(read_options.pop('skipfooter', 0))
-                    df = pd.read_excel(uploaded_file, sheet_name=sheet, engine='xlrd', **read_options)
+                    safe_read_opts = {}
+                    if 'skiprows' in read_options:
+                        safe_read_opts['skiprows'] = int(read_options['skiprows'])
+                    if 'header' in read_options:
+                        safe_read_opts['header'] = read_options['header']
+                    df = pd.read_excel(uploaded_file, sheet_name=sheet, engine='xlrd', **safe_read_opts)
                     # 手动删除尾部行
                     if skipfooter_val > 0 and len(df) > skipfooter_val:
                         df = df.iloc[:-skipfooter_val].reset_index(drop=True)
                 else:
-                    df = pd.read_excel(uploaded_file, sheet_name=sheet, engine='xlrd', **read_options)
+                    safe_read_opts = {}
+                    if 'skiprows' in read_options:
+                        safe_read_opts['skiprows'] = int(read_options['skiprows'])
+                    if 'header' in read_options:
+                        safe_read_opts['header'] = read_options['header']
+                    df = pd.read_excel(uploaded_file, sheet_name=sheet, engine='xlrd', **safe_read_opts)
             
             # 如果读取多个工作表，从工作表名称提取班级信息
             if len(sheets_to_read) > 1:
@@ -1370,30 +1398,58 @@ def main():
                 if score_file.name.endswith('.xlsx'):
                     score_file.seek(0)
                     try:
+                        # 确保所有参数都是正确的类型
+                        safe_score_opts = {}
+                        if 'skiprows' in read_score_opts:
+                            safe_score_opts['skiprows'] = int(read_score_opts['skiprows'])
+                        if 'skipfooter' in read_score_opts:
+                            safe_score_opts['skipfooter'] = int(read_score_opts['skipfooter'])
+                        if 'header' in read_score_opts:
+                            safe_score_opts['header'] = read_score_opts['header']
                         # openpyxl支持skipfooter参数
-                        score_df = pd.read_excel(score_file, engine='openpyxl', **read_score_opts)
+                        score_df = pd.read_excel(score_file, engine='openpyxl', **safe_score_opts)
                     except Exception as e:
                         score_file.seek(0)
                         # 如果失败，尝试手动处理skipfooter
                         if 'skipfooter' in read_score_opts:
                             skipfooter_val = int(read_score_opts.pop('skipfooter', 0))
-                            score_df = pd.read_excel(score_file, engine='openpyxl', **read_score_opts)
+                            safe_score_opts = {}
+                            if 'skiprows' in read_score_opts:
+                                safe_score_opts['skiprows'] = int(read_score_opts['skiprows'])
+                            if 'header' in read_score_opts:
+                                safe_score_opts['header'] = read_score_opts['header']
+                            score_df = pd.read_excel(score_file, engine='openpyxl', **safe_score_opts)
                             # 手动删除尾部行
                             if skipfooter_val > 0 and len(score_df) > skipfooter_val:
                                 score_df = score_df.iloc[:-skipfooter_val].reset_index(drop=True)
                         else:
-                            score_df = pd.read_excel(score_file, **read_score_opts)
+                            safe_score_opts = {}
+                            if 'skiprows' in read_score_opts:
+                                safe_score_opts['skiprows'] = int(read_score_opts['skiprows'])
+                            if 'header' in read_score_opts:
+                                safe_score_opts['header'] = read_score_opts['header']
+                            score_df = pd.read_excel(score_file, **safe_score_opts)
                 else:
                     score_file.seek(0)
                     # xlrd引擎不支持skipfooter，需要手动处理
                     if 'skipfooter' in read_score_opts:
                         skipfooter_val = int(read_score_opts.pop('skipfooter', 0))
-                        score_df = pd.read_excel(score_file, engine='xlrd', **read_score_opts)
+                        safe_score_opts = {}
+                        if 'skiprows' in read_score_opts:
+                            safe_score_opts['skiprows'] = int(read_score_opts['skiprows'])
+                        if 'header' in read_score_opts:
+                            safe_score_opts['header'] = read_score_opts['header']
+                        score_df = pd.read_excel(score_file, engine='xlrd', **safe_score_opts)
                         # 手动删除尾部行
                         if skipfooter_val > 0 and len(score_df) > skipfooter_val:
                             score_df = score_df.iloc[:-skipfooter_val].reset_index(drop=True)
                     else:
-                        score_df = pd.read_excel(score_file, engine='xlrd', **read_score_opts)
+                        safe_score_opts = {}
+                        if 'skiprows' in read_score_opts:
+                            safe_score_opts['skiprows'] = int(read_score_opts['skiprows'])
+                        if 'header' in read_score_opts:
+                            safe_score_opts['header'] = read_score_opts['header']
+                        score_df = pd.read_excel(score_file, engine='xlrd', **safe_score_opts)
                 
                 # 如果跳过了行，处理列名
                 if score_skiprows > 0 and len(score_df) > 0:
