@@ -1972,21 +1972,21 @@ def main():
                 
             except Exception as e:
                 st.error(f"导入失败：{str(e)}")
-            
-            # 在导入按钮下方显示成功消息（持续显示直到用户关闭）
-            # 注意：消息显示在 if score_file is not None 块内部，紧跟在按钮代码块后面
-            if st.session_state.get('import_success_message'):
-                # 创建一个醒目的成功消息提示框
-                success_msg = st.session_state.import_success_message
-                # 使用列布局，让消息和关闭按钮在同一行
-                col_msg, col_close = st.columns([6, 1])
-                with col_msg:
-                    st.success(success_msg)
-                with col_close:
-                    # 提供一个关闭按钮
-                    if st.button("✕ 关闭", key="close_import_message", use_container_width=True):
-                        del st.session_state.import_success_message
-                        st.rerun()
+        
+        # 在导入区域显示成功消息（持续显示直到用户关闭）
+        # 注意：消息显示在 if score_file is not None 块外面，确保无论文件状态如何都能显示
+        if st.session_state.get('import_success_message'):
+            # 创建一个醒目的成功消息提示框
+            success_msg = st.session_state.import_success_message
+            # 使用列布局，让消息和关闭按钮在同一行
+            col_msg, col_close = st.columns([6, 1])
+            with col_msg:
+                st.success(success_msg)
+            with col_close:
+                # 提供一个关闭按钮
+                if st.button("✕ 关闭", key="close_import_message", use_container_width=True):
+                    del st.session_state.import_success_message
+                    st.rerun()
         
         # 表格编辑
         st.markdown("---")
