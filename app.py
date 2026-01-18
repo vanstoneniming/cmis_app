@@ -2044,7 +2044,7 @@ def main():
             column_config=column_config_dict,
             hide_index=True,
             num_rows="fixed",
-            width='stretch',
+            use_container_width=True,
             key="grade_editor"
         )
         
