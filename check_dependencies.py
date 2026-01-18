@@ -5,6 +5,7 @@
 用于验证虚拟环境中的库版本是否正确
 """
 
+from __future__ import print_function
 import sys
 
 def check_dependency(package_name, min_version, installed_version):
@@ -19,13 +20,13 @@ def check_dependency(package_name, min_version, installed_version):
         min_ver = version.parse(min_version)
         installed_ver = version.parse(installed_version)
         if installed_ver >= min_ver:
-            print(f"✅ {package_name}: {installed_version} >= {min_version}")
+            print("✅ {}: {} >= {}".format(package_name, installed_version, min_version))
             return True
         else:
-            print(f"❌ {package_name}: {installed_version} < {min_version} (需要 >= {min_version})")
+            print("❌ {}: {} < {} (需要 >= {})".format(package_name, installed_version, min_version, min_version))
             return False
     except Exception as e:
-        print(f"⚠️  {package_name}: 无法比较版本 ({e})")
+        print("⚠️  {}: 无法比较版本 ({})".format(package_name, e))
         return False
 
 def main():
@@ -56,10 +57,10 @@ def main():
             if not check_dependency(package, min_version, installed_version):
                 all_ok = False
         except ImportError:
-            print(f"❌ {package}: 未安装")
+            print("❌ {}: 未安装".format(package))
             all_ok = False
         except Exception as e:
-            print(f"⚠️  {package}: 检查失败 ({e})")
+            print("⚠️  {}: 检查失败 ({})".format(package, e))
             all_ok = False
     
     print()
