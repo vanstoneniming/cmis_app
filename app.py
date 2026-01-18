@@ -1397,6 +1397,22 @@ def main():
             key="score_upload"
         )
         
+        # 检测文件是否改变，如果改变了则清除之前的成功消息
+        if score_file is not None:
+            current_file_name = score_file.name
+            last_file_name = st.session_state.get('last_score_file_name', None)
+            # 如果文件改变了，清除之前的成功消息
+            if last_file_name is not None and current_file_name != last_file_name:
+                if 'import_success_message' in st.session_state:
+                    del st.session_state.import_success_message
+            # 更新保存的文件名
+            st.session_state.last_score_file_name = current_file_name
+        elif 'last_score_file_name' in st.session_state and st.session_state.last_score_file_name is not None:
+            # 如果文件被清除了（变为None），也清除成功消息
+            if 'import_success_message' in st.session_state:
+                del st.session_state.import_success_message
+            st.session_state.last_score_file_name = None
+        
         if score_file is not None:
             try:
                 # 跳过行数设置
