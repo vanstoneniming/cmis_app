@@ -1160,7 +1160,7 @@ def main():
                     
                     st.markdown("---")
                     st.markdown("#### 📋 文件预览（前10行）")
-                    st.dataframe(preview_df, width='stretch')
+                    st.dataframe(preview_df, use_container_width=True)
                     st.caption("💡 如果顶部有无用的行（如标题、说明等），请在上方设置跳过行数")
                     
                     st.markdown("")  # 增加间距
@@ -1538,7 +1538,7 @@ def main():
                 # 规范化数据类型，避免pyarrow错误
                 score_df = normalize_dataframe_types(score_df)
                 
-                st.dataframe(score_df.head(15), width='stretch')
+                st.dataframe(score_df.head(15), use_container_width=True)
                 st.caption(f"显示前15行数据，共 {len(score_df)} 行")
                 
                 # 识别匹配列（姓名或学号）
@@ -1692,7 +1692,7 @@ def main():
                                         if score_display_data:
                                             # 使用表格显示完整的一行数据（所有列）
                                             score_display_df = pd.DataFrame([score_display_data])
-                                            st.dataframe(score_display_df, width='stretch', hide_index=True)
+                                            st.dataframe(score_display_df, use_container_width=True, hide_index=True)
                                         else:
                                             st.caption("💡 该行没有数据")
                                     else:
@@ -1780,7 +1780,7 @@ def main():
                                         
                                         if display_df_data:
                                             display_df = pd.DataFrame(display_df_data)
-                                            st.dataframe(display_df, width='stretch', hide_index=True)
+                                            st.dataframe(display_df, use_container_width=True, hide_index=True)
                                     
                                     # 让用户选择
                                     selected_option = st.radio(
