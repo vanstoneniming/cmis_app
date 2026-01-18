@@ -1388,21 +1388,6 @@ def main():
         
         # 批量导入数据列（直接展开，不使用折叠面板）
         st.markdown("**📥 从Excel导入数据列**")
-        
-        # 显示导入第二个文件的成功消息（在导入区域顶部，持续显示直到用户关闭）
-        if st.session_state.get('import_success_message'):
-            # 创建一个醒目的成功消息提示框
-            success_msg = st.session_state.import_success_message
-            # 使用列布局，让消息和关闭按钮在同一行
-            col_msg, col_close = st.columns([6, 1])
-            with col_msg:
-                st.success(success_msg)
-            with col_close:
-                # 提供一个关闭按钮
-                if st.button("✕ 关闭", key="close_import_message", use_container_width=True):
-                    del st.session_state.import_success_message
-                    st.rerun()
-        
         st.info("💡 上传第二个Excel文件，系统会根据匹配列自动匹配并导入数据列")
         
         score_file = st.file_uploader(
@@ -1987,6 +1972,21 @@ def main():
                 
             except Exception as e:
                 st.error(f"导入失败：{str(e)}")
+        
+        # 在导入按钮下方显示成功消息（持续显示直到用户关闭）
+        # 注意：消息显示在 if score_file is not None 外面，确保一直显示
+        if st.session_state.get('import_success_message'):
+            # 创建一个醒目的成功消息提示框
+            success_msg = st.session_state.import_success_message
+            # 使用列布局，让消息和关闭按钮在同一行
+            col_msg, col_close = st.columns([6, 1])
+            with col_msg:
+                st.success(success_msg)
+            with col_close:
+                # 提供一个关闭按钮
+                if st.button("✕ 关闭", key="close_import_message", use_container_width=True):
+                    del st.session_state.import_success_message
+                    st.rerun()
         
         # 表格编辑
         st.markdown("---")
