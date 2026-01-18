@@ -323,12 +323,46 @@
 1. **在宝塔终端中执行**（或在宝塔面板的"终端"功能中执行）
    ```bash
    cd /www/wwwroot/cmis_app
+   # 如果使用宝塔的 Python 项目管理器创建的虚拟环境，路径可能是：
+   # /www/server/pyporject_evn/cmis_app_venv
+   
+   # 方法1：创建新的虚拟环境
    python3 -m venv venv
    source venv/bin/activate
    pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+   
+   # 方法2：如果已使用宝塔的 Python 项目管理器创建了虚拟环境
+   # 激活虚拟环境并安装依赖
+   source /www/server/pyporject_evn/cmis_app_venv/bin/activate
+   pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
    ```
 
-2. **或使用宝塔的 Python 项目管理器（不推荐）**
+2. **检查依赖版本（重要）**
+   
+   如果遇到 `'str' object cannot be interpreted as an integer` 等类型错误，可能是依赖版本不匹配。
+   
+   在虚拟环境中运行检查脚本：
+   ```bash
+   # 激活虚拟环境
+   source /www/server/pyporject_evn/cmis_app_venv/bin/activate
+   
+   # 运行依赖检查
+   python check_dependencies.py
+   ```
+   
+   或者手动检查关键依赖版本：
+   ```bash
+   python -c "import pandas; print('pandas:', pandas.__version__)"  # 应该 >= 2.0.0
+   python -c "import openpyxl; print('openpyxl:', openpyxl.__version__)"  # 应该 >= 3.1.0
+   python -c "import xlrd; print('xlrd:', xlrd.__version__)"  # 应该 >= 2.0.1
+   ```
+   
+   如果版本不符合要求，重新安装依赖：
+   ```bash
+   pip install --upgrade -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+   ```
+
+3. **或使用宝塔的 Python 项目管理器（不推荐）**
    - ⚠️ **注意**: Python项目管理器可能没有"启动命令"配置项，且不适合Streamlit应用
    - 如果必须使用，需要创建启动脚本（见下方说明）
    - **强烈建议**: 直接使用"进程守护管理器"（见步骤3），更稳定且易管理
