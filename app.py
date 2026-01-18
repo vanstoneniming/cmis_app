@@ -960,7 +960,7 @@ def main():
         col_title1, col_title2, col_title3 = st.columns([1, 3, 1])
         with col_title2:
             st.markdown('<h1 class="main-title">📚 CMIS数据合并工具</h1>', unsafe_allow_html=True)
-            st.markdown('<p style="text-align: center; color: #666; margin-bottom: 2rem;">快速、便捷地将两个Excel文件中顺序不同的数据合并起来，根据姓名或学号自动匹配，即使顺序不同也能正确合并。<br>开源地址：<a href="https://github.com/vanstoneniming/cmis_app.git" target="_blank" style="color: #667eea; text-decoration: none;">https://github.com/vanstoneniming/cmis_app.git</a></p>', unsafe_allow_html=True)
+            st.markdown('<p style="text-align: left; color: #666; margin-bottom: 2rem;">快速、便捷地将两个Excel文件中顺序不同的数据合并起来，根据姓名或学号自动匹配，即使顺序不同也能正确合并。<br>🌐 访问地址：<a href="https://cmis-app.tihe.cc/" target="_blank" style="color: #667eea; text-decoration: none;">https://cmis-app.tihe.cc/</a> | <a href="https://cmis-app.streamlit.app/" target="_blank" style="color: #667eea; text-decoration: none;">https://cmis-app.streamlit.app/</a><br>📦 开源地址：<a href="https://github.com/vanstoneniming/cmis_app.git" target="_blank" style="color: #667eea; text-decoration: none;">https://github.com/vanstoneniming/cmis_app.git</a></p>', unsafe_allow_html=True)
         
         st.markdown("---")
     

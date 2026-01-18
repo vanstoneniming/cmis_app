@@ -2,6 +2,11 @@
 
 一个基于 Streamlit 的Web应用，用于将两个Excel文件中顺序不同的数据合并起来。
 
+## 🌐 在线访问
+
+- **国内访问**：https://cmis-app.tihe.cc/
+- **Streamlit Cloud**：https://cmis-app.streamlit.app/
+
 ## 功能特点
 
 - ✅ **Excel导入**：支持导入.xlsx和.xls格式的Excel文件
