@@ -1386,6 +1386,20 @@ def main():
             # 显示一次后清除
             del st.session_state.load_info_message
         
+        # 显示导入第二个文件的成功消息（持续显示，直到用户关闭）
+        if st.session_state.get('import_success_message'):
+            # 创建一个醒目的成功消息提示框
+            success_msg = st.session_state.import_success_message
+            # 使用列布局，让消息和关闭按钮在同一行
+            col_msg, col_close = st.columns([6, 1])
+            with col_msg:
+                st.success(success_msg)
+            with col_close:
+                # 提供一个关闭按钮
+                if st.button("✕ 关闭", key="close_import_message", use_container_width=True):
+                    del st.session_state.import_success_message
+                    st.rerun()
+        
         # 批量导入数据列（直接展开，不使用折叠面板）
         st.markdown("**📥 从Excel导入数据列**")
         st.info("💡 上传第二个Excel文件，系统会根据匹配列自动匹配并导入数据列")
@@ -1964,7 +1978,8 @@ def main():
                                     if len(unmatched_rows) > 10:
                                         success_msg += f"\n... 还有 {len(unmatched_rows) - 10} 行未匹配"
                                 
-                                st.success(success_msg)
+                                # 将成功消息保存到 session_state，让它在主界面持续显示
+                                st.session_state.import_success_message = success_msg
                                 # 不清除重名映射，保留用户的选择以便下次查看或重新导入时记住选择
                                 # 如果需要清除，可以在用户明确要求时清除
                                 st.rerun()
