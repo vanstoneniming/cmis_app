@@ -4,6 +4,7 @@ import io
 import os
 import pickle
 import re
+import uuid
 from datetime import datetime
 from pathlib import Path
 from pypinyin import lazy_pinyin, Style
@@ -17,10 +18,18 @@ st.set_page_config(
 
 # 数据文件路径
 DATA_DIR = Path("data")
-DATA_FILE = DATA_DIR / "grades_data.pkl"
+
+def get_session_data_file():
+    """获取当前会话的数据文件路径"""
+    # 确保会话ID已初始化
+    if 'session_id' not in st.session_state:
+        # 生成唯一的会话ID（使用UUID）
+        st.session_state.session_id = str(uuid.uuid4())[:8]  # 使用UUID的前8位作为简短ID
+    session_id = st.session_state.session_id
+    return DATA_DIR / f"grades_data_{session_id}.pkl"
 
 def save_data():
-    """保存数据到本地文件"""
+    """保存数据到本地文件（会话特定）"""
     try:
         # 确保数据目录存在
         DATA_DIR.mkdir(exist_ok=True)
@@ -31,7 +40,9 @@ def save_data():
                 'grades_df': st.session_state.get('grades_df'),
                 'last_saved': current_time
             }
-            with open(DATA_FILE, 'wb') as f:
+            # 使用会话特定的文件路径
+            session_file = get_session_data_file()
+            with open(session_file, 'wb') as f:
                 pickle.dump(data, f)
             # 更新session state中的保存时间，以便立即显示
             st.session_state.last_saved_time = current_time
@@ -48,12 +59,14 @@ def save_data():
         return False
 
 def load_data():
-    """从本地文件加载数据"""
+    """从本地文件加载数据（会话特定）"""
     try:
         # 确保数据目录存在
         DATA_DIR.mkdir(exist_ok=True)
-        if DATA_FILE.exists():
-            with open(DATA_FILE, 'rb') as f:
+        # 使用会话特定的文件路径
+        session_file = get_session_data_file()
+        if session_file.exists():
+            with open(session_file, 'rb') as f:
                 data = pickle.load(f)
             return data.get('students_df'), data.get('grades_df'), data.get('last_saved')
         return None, None, None
@@ -76,6 +89,11 @@ def update_data_and_save(func, *args, **kwargs):
 # 将初始化移到main()函数内部，避免在模块导入时访问Streamlit上下文
 def init_session_state():
     """初始化session state，避免在模块级别访问Streamlit上下文"""
+    # 初始化会话ID（如果还没有）
+    if 'session_id' not in st.session_state:
+        # 生成唯一的会话ID（使用UUID的前8位）
+        st.session_state.session_id = str(uuid.uuid4())[:8]
+    
     # Streamlit Cloud 部署时不自动加载本地数据文件，避免携带测试数据
     if 'students_df' not in st.session_state:
         # 检查是否在 Streamlit Cloud 环境（通过环境变量判断）
@@ -1258,13 +1276,15 @@ def main():
             
             # 清除数据按钮
             st.markdown("---")
-            if st.button("🗑️ 清除所有数据", use_container_width=True, help="清除数据和本地文件"):
-                if DATA_FILE.exists():
-                    os.remove(DATA_FILE)
+            if st.button("🗑️ 清除所有数据", use_container_width=True, help="清除数据和本地文件（仅当前会话）"):
+                # 使用会话特定的文件路径
+                session_file = get_session_data_file()
+                if session_file.exists():
+                    os.remove(session_file)
                 st.session_state.students_df = None
                 st.session_state.grades_df = None
                 st.session_state.data_loaded = False
-                st.success("✅ 数据已清除")
+                st.success("✅ 数据已清除（仅当前会话的数据）")
                 st.rerun()
             
     
