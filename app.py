@@ -1011,8 +1011,14 @@ def main():
                 
                 # 读取预览数据（考虑跳过行数、尾部行数和工作表）
                 # 确保skiprows和skipfooter是整数类型
+                print(f"[DEBUG] 原始 skiprows 类型: {type(skiprows)}, 值: {skiprows}")
+                print(f"[DEBUG] 原始 skipfooter 类型: {type(skipfooter)}, 值: {skipfooter}")
+                
                 skiprows = int(skiprows) if skiprows else 0
                 skipfooter = int(skipfooter) if skipfooter else 0
+                
+                print(f"[DEBUG] 转换后 skiprows 类型: {type(skiprows)}, 值: {skiprows}")
+                print(f"[DEBUG] 转换后 skipfooter 类型: {type(skipfooter)}, 值: {skipfooter}")
                 
                 read_opts = {}
                 if skiprows > 0:
@@ -1024,12 +1030,19 @@ def main():
                 
                 # 再次确保 read_opts 中所有数值都是整数类型（双重保险）
                 if 'skiprows' in read_opts:
+                    print(f"[DEBUG] read_opts['skiprows'] 转换前: {type(read_opts['skiprows'])}, 值: {read_opts['skiprows']}")
                     read_opts['skiprows'] = int(read_opts['skiprows'])
+                    print(f"[DEBUG] read_opts['skiprows'] 转换后: {type(read_opts['skiprows'])}, 值: {read_opts['skiprows']}")
                 if 'skipfooter' in read_opts:
+                    print(f"[DEBUG] read_opts['skipfooter'] 转换前: {type(read_opts['skipfooter'])}, 值: {read_opts['skipfooter']}")
                     read_opts['skipfooter'] = int(read_opts['skipfooter'])
+                    print(f"[DEBUG] read_opts['skipfooter'] 转换后: {type(read_opts['skipfooter'])}, 值: {read_opts['skipfooter']}")
+                
+                print(f"[DEBUG] read_opts 最终内容: {read_opts}")
                 
                 # 选择用于预览的工作表
                 preview_sheet = selected_sheet if selected_sheet else (sheet_names[0] if sheet_names else None)
+                print(f"[DEBUG] 预览工作表: {preview_sheet}")
                 
                 if uploaded_file.name.endswith('.xlsx'):
                     uploaded_file.seek(0)
@@ -1055,11 +1068,18 @@ def main():
                             # 确保 read_opts 中所有参数都是正确的类型
                             safe_opts = {}
                             if 'skiprows' in read_opts:
+                                print(f"[DEBUG] 创建 safe_opts，skiprows 类型: {type(read_opts['skiprows'])}, 值: {read_opts['skiprows']}")
                                 safe_opts['skiprows'] = int(read_opts['skiprows'])
+                                print(f"[DEBUG] safe_opts['skiprows'] 类型: {type(safe_opts['skiprows'])}, 值: {safe_opts['skiprows']}")
                             if 'header' in read_opts:
                                 safe_opts['header'] = read_opts['header']
+                            print(f"[DEBUG] 调用 pd.read_excel，safe_opts: {safe_opts}")
                             preview_df = pd.read_excel(uploaded_file, sheet_name=preview_sheet, engine='openpyxl', nrows=15, **safe_opts)
                     except Exception as e:
+                        print(f"[DEBUG] pd.read_excel 异常: {type(e).__name__}: {str(e)}")
+                        print(f"[DEBUG] 异常时的 read_opts: {read_opts}")
+                        import traceback
+                        traceback.print_exc()
                         uploaded_file.seek(0)
                         # 如果失败，手动处理skipfooter
                         if 'skipfooter' in read_opts:
@@ -1067,9 +1087,11 @@ def main():
                             # 确保 read_opts 中所有参数都是正确的类型
                             safe_opts = {}
                             if 'skiprows' in read_opts:
+                                print(f"[DEBUG] 异常处理: skiprows 类型: {type(read_opts['skiprows'])}, 值: {read_opts['skiprows']}")
                                 safe_opts['skiprows'] = int(read_opts['skiprows'])
                             if 'header' in read_opts:
                                 safe_opts['header'] = read_opts['header']
+                            print(f"[DEBUG] 异常处理: safe_opts = {safe_opts}")
                             preview_df = pd.read_excel(uploaded_file, sheet_name=preview_sheet, engine='openpyxl', nrows=20, **safe_opts)
                             if skipfooter_val > 0 and len(preview_df) > skipfooter_val:
                                 preview_df = preview_df.iloc[:-skipfooter_val].head(15).reset_index(drop=True)
@@ -1077,9 +1099,11 @@ def main():
                             # 确保 read_opts 中所有参数都是正确的类型
                             safe_opts = {}
                             if 'skiprows' in read_opts:
+                                print(f"[DEBUG] 异常处理(无skipfooter): skiprows 类型: {type(read_opts['skiprows'])}, 值: {read_opts['skiprows']}")
                                 safe_opts['skiprows'] = int(read_opts['skiprows'])
                             if 'header' in read_opts:
                                 safe_opts['header'] = read_opts['header']
+                            print(f"[DEBUG] 异常处理(无skipfooter): safe_opts = {safe_opts}")
                             preview_df = pd.read_excel(uploaded_file, sheet_name=preview_sheet, engine='openpyxl', nrows=15, **safe_opts)
                 elif uploaded_file.name.endswith('.xls'):
                     uploaded_file.seek(0)
@@ -1203,7 +1227,21 @@ def main():
                                 save_data()  # 自动保存
                                 st.rerun()
             except Exception as e:
-                st.error(f"预览文件时出错: {str(e)}")
+                error_type = type(e).__name__
+                error_msg = str(e)
+                import traceback
+                error_traceback = traceback.format_exc()
+                
+                print(f"[DEBUG] ========== 文件预览错误 ==========")
+                print(f"[DEBUG] 错误类型: {error_type}")
+                print(f"[DEBUG] 错误消息: {error_msg}")
+                print(f"[DEBUG] 错误堆栈:\n{error_traceback}")
+                print(f"[DEBUG] ==================================")
+                
+                # 显示详细错误信息
+                st.error(f"预览文件时出错: {error_msg}")
+                with st.expander("🔍 查看详细错误信息（调试用）"):
+                    st.code(f"错误类型: {error_type}\n\n错误消息: {error_msg}\n\n堆栈跟踪:\n{error_traceback}", language="text")
         
         st.markdown("---")
         st.header("💾 数据管理")
