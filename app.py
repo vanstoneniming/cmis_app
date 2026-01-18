@@ -19,13 +19,32 @@ st.set_page_config(
 # 数据文件路径
 DATA_DIR = Path("data")
 
+def get_or_find_session_id():
+    """获取或查找会话ID"""
+    if 'session_id' in st.session_state:
+        return st.session_state.session_id
+    
+    # 如果没有session_id，尝试从数据文件中查找最新的一个
+    # 这样可以恢复之前的会话数据
+    DATA_DIR.mkdir(exist_ok=True)
+    data_files = list(DATA_DIR.glob("grades_data_*.pkl"))
+    
+    if data_files:
+        # 找到最新的文件（按修改时间排序）
+        latest_file = max(data_files, key=lambda p: p.stat().st_mtime)
+        # 从文件名中提取session_id：grades_data_XXXXXXXX.pkl
+        session_id = latest_file.stem.replace("grades_data_", "")
+        st.session_state.session_id = session_id
+        return session_id
+    
+    # 如果没有任何数据文件，生成新的session_id
+    session_id = str(uuid.uuid4())[:8]
+    st.session_state.session_id = session_id
+    return session_id
+
 def get_session_data_file():
     """获取当前会话的数据文件路径"""
-    # 确保会话ID已初始化
-    if 'session_id' not in st.session_state:
-        # 生成唯一的会话ID（使用UUID）
-        st.session_state.session_id = str(uuid.uuid4())[:8]  # 使用UUID的前8位作为简短ID
-    session_id = st.session_state.session_id
+    session_id = get_or_find_session_id()
     return DATA_DIR / f"grades_data_{session_id}.pkl"
 
 def save_data():
@@ -89,10 +108,8 @@ def update_data_and_save(func, *args, **kwargs):
 # 将初始化移到main()函数内部，避免在模块导入时访问Streamlit上下文
 def init_session_state():
     """初始化session state，避免在模块级别访问Streamlit上下文"""
-    # 初始化会话ID（如果还没有）
-    if 'session_id' not in st.session_state:
-        # 生成唯一的会话ID（使用UUID的前8位）
-        st.session_state.session_id = str(uuid.uuid4())[:8]
+    # 初始化会话ID（如果还没有，会尝试从现有数据文件中恢复）
+    get_or_find_session_id()  # 这会确保 session_id 被设置
     
     # Streamlit Cloud 部署时不自动加载本地数据文件，避免携带测试数据
     if 'students_df' not in st.session_state:
