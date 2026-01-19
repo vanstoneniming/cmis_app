@@ -2164,12 +2164,13 @@ def main():
             column_config_dict["班级"] = st.column_config.TextColumn("班级", disabled=True)
             
         # 表格编辑器
+        # 注意：Streamlit 1.40 版本不支持 width='stretch'，使用 use_container_width=True
         edited_df = st.data_editor(
             display_df,
             column_config=column_config_dict,
             hide_index=True,
             num_rows="fixed",
-            width='stretch',
+            use_container_width=True,
             key="grade_editor"
         )
         
