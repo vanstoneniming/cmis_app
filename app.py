@@ -2,12 +2,12 @@ import streamlit as st
 import pandas as pd
 import io
 import os
-import pickle
 import re
 import uuid
 from datetime import datetime
 from pathlib import Path
 from pypinyin import lazy_pinyin, Style
+import streamlit.components.v1 as components
 
 # 页面配置
 st.set_page_config(
@@ -16,123 +16,40 @@ st.set_page_config(
     layout="wide"
 )
 
-# 数据文件路径
-DATA_DIR = Path("data")
-
 def get_or_find_session_id():
-    """获取或查找会话ID"""
+    """获取或生成会话ID（会话内有效，关闭浏览器后丢失）
+    
+    工作流程：
+    1. 首先检查 session_state 中是否有 session_id（同一会话内）
+    2. 如果没有，生成新的 session_id
+    
+    注意：这是一个即用即弃的小工具，数据只在当前会话内有效，关闭浏览器后数据会丢失
+    """
+    # 首先尝试从session_state获取（同一会话内）
     if 'session_id' in st.session_state:
         return st.session_state.session_id
     
-    # 如果没有session_id，尝试从数据文件中查找最新的一个
-    # 这样可以恢复之前的会话数据
-    DATA_DIR.mkdir(exist_ok=True)
-    data_files = list(DATA_DIR.glob("grades_data_*.pkl"))
-    
-    if data_files:
-        # 找到最新的文件（按修改时间排序）
-        latest_file = max(data_files, key=lambda p: p.stat().st_mtime)
-        # 从文件名中提取session_id：grades_data_XXXXXXXX.pkl
-        session_id = latest_file.stem.replace("grades_data_", "")
-        st.session_state.session_id = session_id
-        return session_id
-    
-    # 如果没有任何数据文件，生成新的session_id
+    # 如果没有，生成新的session_id
     session_id = str(uuid.uuid4())[:8]
     st.session_state.session_id = session_id
+    
     return session_id
 
-def get_session_data_file():
-    """获取当前会话的数据文件路径"""
-    session_id = get_or_find_session_id()
-    return DATA_DIR / f"grades_data_{session_id}.pkl"
-
-def save_data():
-    """保存数据到本地文件（会话特定）"""
-    try:
-        # 确保数据目录存在
-        DATA_DIR.mkdir(exist_ok=True)
-        if st.session_state.get('grades_df') is not None:
-            current_time = datetime.now().isoformat()
-            data = {
-                'students_df': st.session_state.get('students_df'),
-                'grades_df': st.session_state.get('grades_df'),
-                'last_saved': current_time
-            }
-            # 使用会话特定的文件路径
-            session_file = get_session_data_file()
-            with open(session_file, 'wb') as f:
-                pickle.dump(data, f)
-            # 更新session state中的保存时间，以便立即显示
-            st.session_state.last_saved_time = current_time
-            st.session_state.data_loaded = True
-            return True
-        return False
-    except Exception as e:
-        # 在Streamlit上下文中才显示错误
-        try:
-            st.error(f"保存数据失败: {str(e)}")
-        except:
-            # 如果不在Streamlit上下文，只打印日志
-            print(f"保存数据失败: {str(e)}")
-        return False
-
-def load_data():
-    """从本地文件加载数据（会话特定）"""
-    try:
-        # 确保数据目录存在
-        DATA_DIR.mkdir(exist_ok=True)
-        # 使用会话特定的文件路径
-        session_file = get_session_data_file()
-        if session_file.exists():
-            with open(session_file, 'rb') as f:
-                data = pickle.load(f)
-            return data.get('students_df'), data.get('grades_df'), data.get('last_saved')
-        return None, None, None
-    except Exception as e:
-        # 在Streamlit上下文中才显示错误
-        try:
-            st.error(f"加载数据失败: {str(e)}")
-        except:
-            # 如果不在Streamlit上下文，只打印日志
-            print(f"加载数据失败: {str(e)}")
-        return None, None, None
-
-def update_data_and_save(func, *args, **kwargs):
-    """执行数据更新函数并自动保存"""
-    result = func(*args, **kwargs)
-    save_data()
-    return result
 
 # 初始化session state的函数
 # 将初始化移到main()函数内部，避免在模块导入时访问Streamlit上下文
 def init_session_state():
     """初始化session state，避免在模块级别访问Streamlit上下文"""
-    # 初始化会话ID（如果还没有，会尝试从现有数据文件中恢复）
+    # 初始化会话ID（每个浏览器会话都有独立的session_id）
     get_or_find_session_id()  # 这会确保 session_id 被设置
     
-    # Streamlit Cloud 部署时不自动加载本地数据文件，避免携带测试数据
+    # 即用即弃的小工具：数据只在当前会话内有效，不自动加载历史数据文件
+    # 刷新页面时，Streamlit的session_state会保持，所以数据不会丢失
+    # 关闭浏览器后，session_state会重置，数据会丢失（这是预期的行为）
     if 'students_df' not in st.session_state:
-        # 检查是否在 Streamlit Cloud 环境（通过环境变量判断）
-        is_streamlit_cloud = os.environ.get('STREAMLIT_SHARING_MODE') == 'true' or os.environ.get('STREAMLIT_SERVER_PORT')
-        
-        # 只在非 Streamlit Cloud 环境尝试加载已保存的数据
-        if not is_streamlit_cloud:
-            loaded_students, loaded_grades, last_saved = load_data()
-            if loaded_students is not None and loaded_grades is not None:
-                st.session_state.students_df = loaded_students
-                st.session_state.grades_df = loaded_grades
-                st.session_state.data_loaded = True
-                st.session_state.last_saved_time = last_saved
-            else:
-                st.session_state.students_df = None
-                st.session_state.grades_df = None
-                st.session_state.data_loaded = False
-        else:
-            # Streamlit Cloud 环境，不加载本地数据
-            st.session_state.students_df = None
-            st.session_state.grades_df = None
-            st.session_state.data_loaded = False
+        st.session_state.students_df = None
+        st.session_state.grades_df = None
+        st.session_state.data_loaded = False
 
     if 'grades_df' not in st.session_state:
         st.session_state.grades_df = None
@@ -955,6 +872,173 @@ def main():
     </style>
     """, unsafe_allow_html=True)
     
+    # 使用JavaScript替换文件上传控件的英文提示为中文（全局，只执行一次）
+    uploader_i18n_global_js = """
+    <script>
+    (function() {
+        if (window.uploaderI18nInitialized) {
+            // 已经初始化，直接退出
+        } else {
+        window.uploaderI18nInitialized = true;
+        
+        function replaceTextInNode(node) {
+            // 检查节点是否存在
+            if (!node) {
+                return;
+            }
+            
+            // 文本节点
+            if (node.nodeType === 3) {
+                try {
+                    let text = node.textContent;
+                    if (text) {
+                        if (text.includes('Drag and drop file here')) {
+                            node.textContent = text.replace(/Drag and drop file here/gi, '拖拽文件到此处或');
+                        }
+                        if (text.includes('Browse files')) {
+                            node.textContent = text.replace(/Browse files/gi, '浏览文件');
+                        }
+                    }
+                } catch (e) {
+                    // 忽略错误，继续处理
+                }
+            } else if (node.nodeType === 1) {
+                // 元素节点，递归处理所有子节点
+                try {
+                    if (node.childNodes && node.childNodes.length > 0) {
+                        // 创建副本数组，避免在遍历时修改导致的问题
+                        const children = Array.from(node.childNodes);
+                        children.forEach(function(child) {
+                            if (child) {
+                                replaceTextInNode(child);
+                            }
+                        });
+                    }
+                } catch (e) {
+                    // 忽略错误，继续处理
+                }
+            }
+        }
+        
+        function replaceUploaderText() {
+            try {
+                // 方法1: 递归遍历所有节点替换文本
+                if (document.body) {
+                    replaceTextInNode(document.body);
+                }
+                
+                // 方法2: 直接查找并替换特定元素
+                try {
+                    const allElements = document.querySelectorAll('*');
+                    allElements.forEach(function(elem) {
+                        if (!elem) {
+                            return;
+                        }
+                        
+                        try {
+                            const text = elem.textContent || elem.innerText || '';
+                            
+                            // 替换"Drag and drop file here"
+                            if (text.includes('Drag and drop file here')) {
+                                const children = elem.querySelectorAll('*');
+                                if (children.length === 0) {
+                                    // 叶子节点，直接替换
+                                    elem.textContent = text.replace(/Drag and drop file here/gi, '拖拽文件到此处或');
+                                } else {
+                                    // 有子元素，查找并替换子元素
+                                    children.forEach(function(child) {
+                                        if (child && child.textContent && child.textContent.includes('Drag and drop file here')) {
+                                            child.textContent = child.textContent.replace(/Drag and drop file here/gi, '拖拽文件到此处或');
+                                        }
+                                    });
+                                }
+                            }
+                            
+                            // 替换"Browse files"
+                            if (text.trim() === 'Browse files' || text.includes('Browse files')) {
+                                const children = elem.querySelectorAll('*');
+                                if (children.length === 0) {
+                                    elem.textContent = text.replace(/Browse files/gi, '浏览文件');
+                                } else {
+                                    children.forEach(function(child) {
+                                        if (child && child.textContent) {
+                                            const childText = child.textContent;
+                                            if (childText.trim() === 'Browse files' || childText.includes('Browse files')) {
+                                                child.textContent = childText.replace(/Browse files/gi, '浏览文件');
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+                        } catch (e) {
+                            // 忽略单个元素的错误
+                        }
+                    });
+                } catch (e) {
+                    // 忽略查询错误
+                }
+            } catch (e) {
+                // 忽略所有错误，避免影响页面功能
+                console.log('Uploader text replacement error:', e);
+            }
+        }
+        
+        // 页面加载完成后执行
+        function initReplacement() {
+            if (document.body) {
+                replaceUploaderText();
+            }
+        }
+        
+        // 立即执行一次
+        initReplacement();
+        
+        // 页面加载完成后执行
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                setTimeout(initReplacement, 500);
+            });
+        } else {
+            setTimeout(initReplacement, 500);
+        }
+        
+        // Streamlit 动态更新后也执行
+        try {
+            const observer = new MutationObserver(function(mutations) {
+                let hasNewNodes = false;
+                mutations.forEach(function(mutation) {
+                    if (mutation.addedNodes && mutation.addedNodes.length > 0) {
+                        hasNewNodes = true;
+                    }
+                });
+                if (hasNewNodes) {
+                    setTimeout(replaceUploaderText, 200);
+                }
+            });
+            
+            if (document.body) {
+                observer.observe(document.body, { 
+                    childList: true, 
+                    subtree: true,
+                    characterData: true
+                });
+            }
+        } catch (e) {
+            // 忽略 observer 错误
+        }
+        
+        // 定期检查（每500ms检查一次，确保替换成功）
+        try {
+            setInterval(replaceUploaderText, 500);
+        } catch (e) {
+            // 忽略 setInterval 错误
+        }
+        }
+    })();
+    </script>
+    """
+    st.markdown(uploader_i18n_global_js, unsafe_allow_html=True)
+    
     # 标题区域 - 只在没有加载学生名单时显示（起始页面）
     if st.session_state.students_df is None:
         col_title1, col_title2, col_title3 = st.columns([1, 3, 1])
@@ -1259,7 +1343,6 @@ def main():
                                 st.session_state.load_success_message = " | ".join(loaded_info)
                                 st.session_state.load_info_message = "💡 已加载基准文件，可以在主界面中上传第二个Excel文件进行合并"
                                 
-                                save_data()  # 自动保存
                                 st.rerun()
             except Exception as e:
                 error_type = type(e).__name__
@@ -1282,26 +1365,13 @@ def main():
         st.header("💾 数据管理")
         
         if st.session_state.grades_df is not None:
-            # 显示保存状态
-            if st.session_state.get('last_saved_time'):
-                try:
-                    saved_time = datetime.fromisoformat(st.session_state.get('last_saved_time', ''))
-                    time_str = saved_time.strftime("%m-%d %H:%M")
-                    st.caption(f"📂 最后保存: {time_str}")
-                except:
-                    pass
-            
             # 清除数据按钮
             st.markdown("---")
-            if st.button("🗑️ 清除所有数据", use_container_width=True, help="清除数据和本地文件（仅当前会话）"):
-                # 使用会话特定的文件路径
-                session_file = get_session_data_file()
-                if session_file.exists():
-                    os.remove(session_file)
+            if st.button("🗑️ 清除所有数据", use_container_width=True, help="清除数据（仅当前会话）"):
                 st.session_state.students_df = None
                 st.session_state.grades_df = None
                 st.session_state.data_loaded = False
-                st.success("✅ 数据已清除（仅当前会话的数据）")
+                st.success("✅ 数据已清除")
                 st.rerun()
             
     
@@ -1406,7 +1476,6 @@ def main():
             <ul style="line-height: 2.2; color: #155724; margin: 0; padding-left: 1.5rem; font-size: 0.95em; list-style: none;">
                 <li style="margin-bottom: 0.8rem;">⌨️ 使用 <kbd style="background: rgba(255,255,255,0.8); padding: 3px 8px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">Tab</kbd> 键快速切换单元格</li>
                 <li style="margin-bottom: 0.8rem;">📊 批量导入时支持选择多个数据列</li>
-                <li style="margin-bottom: 0.8rem;">💾 数据会自动保存，无需担心丢失</li>
                 <li>⏭️ 支持跳过文件头部和尾部的无用行</li>
             </ul>
         </div>
@@ -2004,8 +2073,6 @@ def main():
                                 
                                 # 不再设置作业状态（已移除作业状态列）
                                 
-                                save_data()  # 自动保存
-                                
                                 success_msg = f"✅ 成功匹配 {matched_count} 名学生，更新 {updated_count} 条数据记录！"
                                 if added_cols:
                                     success_msg += f"\n新增数据列：{', '.join(str(col) for col in added_cols)}"
@@ -2045,18 +2112,7 @@ def main():
         # 统计记录数量，并整合数据加载信息
         total_records = len(st.session_state.grades_df)
         
-        # 获取保存时间信息
-        saved_info = ""
-        last_saved = st.session_state.get('last_saved_time', '')
-        if last_saved:
-            try:
-                saved_time = datetime.fromisoformat(last_saved)
-                time_str = saved_time.strftime("%Y-%m-%d %H:%M:%S")
-                saved_info = f" | 最后保存：{time_str}"
-            except:
-                saved_info = " | 已自动加载保存的数据"
-        
-        st.markdown(f"### ✏️ 数据编辑（共 {total_records} 条记录{saved_info}）")
+        st.markdown(f"### ✏️ 数据编辑（共 {total_records} 条记录）")
         
         display_df = st.session_state.grades_df.copy()
         
@@ -2116,16 +2172,14 @@ def main():
             key="grade_editor"
         )
         
-        # 保存和导出按钮 - 使用更好的布局，确保对齐
+        # 自动保存：检测数据是否有变化，如果有变化则自动更新到 session_state
+        # 使用 equals() 方法比较，避免不必要的更新
+        if not edited_df.equals(st.session_state.grades_df):
+            st.session_state.grades_df = edited_df.copy()
+        
+        # 导出按钮 - 使用更好的布局，确保对齐
         st.markdown("")
         col_save1, col_save2, col_save3, col_save4 = st.columns([1, 1, 1, 1])
-        
-        with col_save2:
-            if st.button("💾 保存更改", type="primary", use_container_width=True):
-                st.session_state.grades_df = edited_df
-                save_data()  # 自动保存
-                st.success("✅ 保存成功！数据已自动保存")
-                st.rerun()
         
         with col_save3:
             # 导出为Excel
