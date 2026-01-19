@@ -315,8 +315,8 @@ def normalize_dataframe_types(df):
                     if df[col].dtype == 'object':
                         # 对于文本类型，先尝试清理
                         cleaned = df[col].astype(str).str.strip()
-                        # 将空字符串、'nan'等替换为NaN
-                        cleaned = cleaned.replace(['', 'nan', 'None', 'NaN', 'NaT', '<NA>'], pd.NA)
+                        # 将空字符串、'nan'、'N/A'等替换为NaN
+                        cleaned = cleaned.replace(['', 'nan', 'None', 'NaN', 'NaT', '<NA>', 'N/A', 'n/a'], pd.NA)
                     else:
                         cleaned = df[col]
                     
@@ -2114,7 +2114,8 @@ def main():
         
         st.markdown(f"### ✏️ 数据编辑（共 {total_records} 条记录）")
         
-        display_df = st.session_state.grades_df.copy()
+        # 规范化数据类型，确保数值列中的 'N/A' 被转换为 NaN
+        display_df = normalize_dataframe_types(st.session_state.grades_df.copy())
         
         # 快捷提示 - 使用更好的样式，更通用的描述
         st.markdown("""
@@ -2168,7 +2169,7 @@ def main():
             column_config=column_config_dict,
             hide_index=True,
             num_rows="fixed",
-            use_container_width=True,
+            width='stretch',
             key="grade_editor"
         )
         
