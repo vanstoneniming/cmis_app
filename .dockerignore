@@ -8,3 +8,7 @@ data/*.db
 *.md
 .pytest_cache/
 .DS_Store
+
+node_modules/
+frontend/node_modules/
+frontend/dist/

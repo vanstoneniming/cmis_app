@@ -1,0 +1,21 @@
+{
+  "name": "cmis-app",
+  "version": "2.0.0",
+  "private": true,
+  "description": "CMIS 数据合并台：基于 Vue 3 + TypeScript 的浏览器端 Excel 名单合并工具",
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w frontend",
+    "dev:host": "npm run dev -w frontend -- --host 0.0.0.0",
+    "build": "npm run build -w frontend",
+    "preview": "npm run preview -w frontend",
+    "typecheck": "npm run typecheck -w frontend",
+    "test": "npm run test -w frontend"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

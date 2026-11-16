@@ -1,0 +1,22 @@
+# Vue 版静态站点配置示例（Apache）
+# 先执行 npm run build，产物位于 /www/wwwroot/cmis_app/frontend/dist
+<VirtualHost *:80>
+    ServerAdmin admin@cmis_app
+    ServerName cmis-app.tihe.cc
+    DocumentRoot "/www/wwwroot/cmis_app/frontend/dist"
+
+    <Directory "/www/wwwroot/cmis_app/frontend/dist">
+        Options -Indexes +FollowSymLinks
+        AllowOverride None
+        Require all granted
+        FallbackResource /index.html
+    </Directory>
+
+    ErrorLog "/www/wwwlogs/cmis_app-error_log"
+    CustomLog "/www/wwwlogs/cmis_app-access_log" combined
+
+    # .xlsx 示例文件允许下载，其余隐藏文件禁止访问
+    <FilesMatch "^\.">
+        Require all denied
+    </FilesMatch>
+</VirtualHost>

@@ -20,5 +20,7 @@ fi
 
 # 启动应用
 echo "正在启动应用..."
-streamlit run app.py
+export STREAMLIT_SERVER_FOLDER_PATH=/tmp/.streamlit
+mkdir -p /tmp/.streamlit
+streamlit run app.py --server.port=8501 --server.address=0.0.0.0 --browser.gatherUsageStats=false --server.enableCORS=false --server.enableXsrfProtection=false --server.enableWebsocketCompression=false
 
