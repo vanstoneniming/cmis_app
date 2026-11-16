@@ -6,6 +6,7 @@ import {
   completenessOf,
   computeDuplicateConflicts,
   defaultMergeColumns,
+  describeUnmatchedRow,
   gridToTable,
   mergeData,
   prepareRosterTable,
@@ -184,6 +185,66 @@ describe('mergeData', () => {
     expect(resolved.matchedRows).toBe(2)
     expect(resolved.table.rows[0]?.['期中']).toBe(80)
     expect(resolved.table.rows[2]?.['期中']).toBe(90)
+  })
+
+  it('returns structured rows for records missing from the roster', () => {
+    const base: TableData = { columns: ['学号', '姓名', '班级'], rows: studentRows() }
+    const analyzed = analyzeTable(
+      gridToTable(
+        [
+          ['姓名', '期中'],
+          ['李四', 80],
+          ['王五', 90],
+        ],
+        0,
+        0,
+      ),
+    )
+    const result = mergeData({
+      base,
+      score: analyzed.table,
+      scoreColumns: analyzed.columns,
+      matchColumn: '姓名',
+      dataColumns: ['期中'],
+      duplicateSelections: {},
+    })
+
+    expect(result.unmatched).toHaveLength(1)
+    expect(result.unmatchedRows).toHaveLength(1)
+    const [row] = result.unmatchedRows
+    expect(row?.rowNumber).toBe(2)
+    expect(row?.name).toBe('王五')
+    expect(row?.matchedKind).toBe('name')
+    expect(row?.reason).toBe('not-found')
+    expect(describeUnmatchedRow(row!)).toBe('基准名单中没有该姓名')
+  })
+
+  it('marks ambiguous name matches as needing a manual choice', () => {
+    const base: TableData = { columns: ['学号', '姓名', '班级'], rows: studentRows() }
+    const analyzed = analyzeTable(
+      gridToTable(
+        [
+          ['姓名', '期中'],
+          ['张三', 80],
+          ['张三', 90],
+        ],
+        0,
+        0,
+      ),
+    )
+    const result = mergeData({
+      base,
+      score: analyzed.table,
+      scoreColumns: analyzed.columns,
+      matchColumn: '姓名',
+      dataColumns: ['期中'],
+      duplicateSelections: {},
+    })
+
+    expect(result.unmatchedRows).toHaveLength(2)
+    expect(result.unmatchedRows[0]?.reason).toBe('ambiguous')
+    expect(result.unmatchedRows[0]?.candidates).toBe(2)
+    expect(describeUnmatchedRow(result.unmatchedRows[0]!)).toContain('同名学生 2 人')
   })
 
   it('rejects a match column that is neither name nor id', () => {

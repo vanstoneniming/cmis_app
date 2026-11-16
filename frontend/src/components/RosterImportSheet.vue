@@ -15,7 +15,9 @@ const props = defineProps<{ file: File | null }>()
 
 const emit = defineEmits<{
   close: []
-  loaded: [payload: { count: number; classes: number; warnings: string[] }]
+  loaded: [
+    payload: { count: number; classes: number; sheets: number; warnings: string[] },
+  ]
 }>()
 
 const session = useSessionStore()
@@ -168,6 +170,7 @@ function submit() {
     if (sheets.length === 0) throw new Error('请选择要导入的工作表')
 
     const allRows: DataRow[] = []
+    const rowSheets: string[] = []
     const warnings: string[] = []
     let nextIndex = 1
     const useSheetClass = sheets.length > 1
@@ -205,6 +208,8 @@ function submit() {
         },
       )
       allRows.push(...built.rows)
+      // 记住每行来自哪个工作表，导出与复制时按原表还原
+      built.rows.forEach(() => rowSheets.push(sheetName))
       warnings.push(...built.warnings)
       nextIndex = built.nextIndex
     }
@@ -213,11 +218,19 @@ function submit() {
       throw new Error('没有读到有效学生，请检查跳过的行数或姓名列设置')
     }
 
-    session.setRoster(allRows, { fileName: currentFileName.value || '学生名单.xlsx' })
+    session.setRoster(allRows, {
+      fileName: currentFileName.value || '学生名单.xlsx',
+      sheets: rowSheets,
+    })
     const classes = new Set(
       allRows.map((row) => displayCell(row['班级'] ?? null)).filter(Boolean),
     ).size
-    emit('loaded', { count: allRows.length, classes, warnings: [...new Set(warnings)] })
+    emit('loaded', {
+      count: allRows.length,
+      classes,
+      sheets: new Set(rowSheets).size,
+      warnings: [...new Set(warnings)],
+    })
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '加载学生名单失败'
   }

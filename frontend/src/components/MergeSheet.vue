@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   Check,
   CheckCircle2,
+  Download,
   FileSpreadsheet,
   Loader2,
   Sparkles,
@@ -18,12 +19,14 @@ import type {
   TableData,
 } from '../types'
 import { displayCell } from '../lib/cells'
-import { getSheetNames, readGrid, readWorkbook } from '../lib/excel'
+import { downloadCsv } from '../lib/csv'
+import { getSheetNames, readGrid, readWorkbook, timestampSuffix } from '../lib/excel'
 import type { MatchCandidate } from '../lib/transform'
 import {
   analyzeTable,
   computeDuplicateConflicts,
   defaultMergeColumns,
+  describeUnmatchedRow,
   gridToTable,
   matchKindOf,
   mergeData,
@@ -55,6 +58,11 @@ const selectedCols = ref<string[]>([])
 const selectionTouched = ref(false)
 const duplicateSelections = ref<Record<string, number>>({})
 const lastResult = ref<MergeResult | null>(null)
+/** 结果页关闭时才写入会话报告，避免报告出现在弹窗背后的页面上 */
+const pendingReport = ref<MergeReport | null>(null)
+/** 导入前的名单快照，用于“撤销本次导入” */
+const previousTable = ref<TableData | null>(null)
+const undoNotice = ref('')
 
 const baseTable = computed<TableData>(() => ({
   columns: session.columns.slice(),
@@ -181,6 +189,13 @@ const canImport = computed(
     selectedCols.value.length > 0,
 )
 
+const unmatchedRows = computed(() => lastResult.value?.unmatchedRows ?? [])
+const resultDetails = computed(() =>
+  lastResult.value?.addedColumns.length
+    ? `新增列：${lastResult.value.addedColumns.join('、')}`
+    : '没有新增列，只更新了已有列',
+)
+
 function applyColumnDefaults(columns: ColumnMeta[]) {
   if (columns.length === 0) {
     matchCol.value = ''
@@ -243,6 +258,8 @@ watch(selectedSheet, () => {
   selectionTouched.value = false
   duplicateSelections.value = {}
   lastResult.value = null
+  pendingReport.value = null
+  previousTable.value = null
   errorMessage.value = ''
   applyColumnDefaults(scoreColumns.value)
 })
@@ -255,6 +272,9 @@ async function loadFile(file: File) {
   currentFileName.value = ''
   selectedSheet.value = ''
   lastResult.value = null
+  pendingReport.value = null
+  previousTable.value = null
+  undoNotice.value = ''
   try {
     const parsed = await readWorkbook(file)
     workbook.value = parsed
@@ -315,7 +335,8 @@ function useSuggestedMatch() {
 
 function doImport() {
   errorMessage.value = ''
-  if (!canImport.value) return
+  // 结果页不允许再次导入：数据已经写入，重复提交会二次合并
+  if (!canImport.value || lastResult.value) return
 
   const result = mergeData({
     base: {
@@ -341,28 +362,69 @@ function doImport() {
     return
   }
 
+  previousTable.value = {
+    columns: session.columns.slice(),
+    rows: session.rows.map((row) => ({ ...row })),
+  }
   session.replaceTable(result.table)
   lastResult.value = result
+  undoNotice.value = ''
 
-  const ignored = result.unmatched.length
-  const report: MergeReport = {
+  const ignored = result.unmatchedRows.length
+  pendingReport.value = {
     kind: 'merge',
     title: `已按基准名单导入 ${result.matchedRows} 行成绩`,
     details: [
       `更新 ${result.updatedCells} 个数据单元格`,
       `新增 ${result.addedColumns.length} 个数据列`,
-      ...(ignored > 0 ? [`已自动忽略 ${ignored} 行基准名单中没有的记录`] : []),
+      ...(ignored > 0 ? [`跳过 ${ignored} 行未匹配记录`] : []),
     ],
     addedColumns: result.addedColumns,
     renamedColumns: result.renamedColumns,
     unmatched: result.unmatched,
+    unmatchedRows: result.unmatchedRows,
   }
-  session.setReport(report)
-  emit('imported', report)
+}
 
-  selectedCols.value = []
-  selectionTouched.value = true
-  duplicateSelections.value = {}
+/** 写入会话报告并通知外层，只在关闭结果页时执行一次 */
+function commitReport() {
+  if (!pendingReport.value) return
+  session.setReport(pendingReport.value)
+  emit('imported', pendingReport.value)
+  pendingReport.value = null
+}
+
+function finish() {
+  commitReport()
+  emit('close')
+}
+
+function handleSheetClose() {
+  // 结果页按 X / Esc / 点遮罩都视为“完成”：数据已写入，不存在取消
+  commitReport()
+  emit('close')
+}
+
+function undoImport() {
+  if (!previousTable.value) return
+  session.replaceTable(previousTable.value)
+  previousTable.value = null
+  lastResult.value = null
+  pendingReport.value = null
+  undoNotice.value = '已撤销本次导入，名单恢复到导入前的状态。可以调整设置后重新导入。'
+}
+
+function exportUnmatched() {
+  if (!lastResult.value) return
+  const header = ['行号', '姓名', '班级', '学号', '未匹配原因']
+  const rows = lastResult.value.unmatchedRows.map((row) => [
+    String(row.rowNumber),
+    row.name || '—',
+    row.className || '—',
+    row.studentId || '—',
+    describeUnmatchedRow(row),
+  ])
+  downloadCsv(`未匹配学生_${timestampSuffix()}.csv`, header, rows)
 }
 
 function visibleValue(row: DataRow, column: string): string {
@@ -373,289 +435,394 @@ function visibleValue(row: DataRow, column: string): string {
 <template>
   <BaseSheet
     title="合并数据列"
-    subtitle="从第二份 Excel 中选择需要并入的列，按姓名或学号匹配到基准名单。"
+    :subtitle="
+      lastResult
+        ? '数据已写入当前名单，核对下面的结果后点「完成」回到数据表。'
+        : '从第二份 Excel 中选择需要并入的列，按姓名或学号匹配到基准名单。'
+    "
     test-id="merge-sheet"
-    @close="$emit('close')"
+    @close="handleSheetClose"
   >
-    <section v-if="lastResult" class="callout callout-success merge-result">
-      <CheckCircle2 :size="18" />
-      <div>
-        <strong>已按基准名单导入 {{ lastResult.matchedRows }} 行成绩，更新 {{ lastResult.updatedCells }} 个单元格。</strong>
-        <p v-if="lastResult.unmatched.length">
-          另有 {{ lastResult.unmatched.length }} 行未在基准名单中，已自动忽略并继续导入。
-        </p>
-        <p v-else>可以继续选择其他列再次导入，或点击“完成”回到数据表。</p>
-      </div>
-    </section>
-
-    <div v-if="errorMessage" class="callout callout-danger merge-error">
-      <AlertTriangle :size="16" />
-      {{ errorMessage }}
+    <div v-if="undoNotice" class="callout callout-success merge-undo" role="status">
+      <CheckCircle2 :size="17" />
+      {{ undoNotice }}
     </div>
 
-    <section class="sheet-section">
-      <div class="section-head">
-        <span class="section-no">1</span>
-        <h3>成绩文件与范围</h3>
+    <template v-if="lastResult">
+      <section class="merge-result" data-testid="merge-result">
+        <div class="result-head">
+          <span class="result-icon"><CheckCircle2 :size="22" /></span>
+          <div>
+            <strong>导入完成，已写入当前名单</strong>
+            <p>
+              按「{{ matchCol }}」匹配到 {{ lastResult.matchedRows }} 名学生；{{ resultDetails }}。
+            </p>
+            <p class="result-meta">
+              {{ currentFileName }}
+              <template v-if="selectedSheet"> · 工作表「{{ selectedSheet }}」</template>
+            </p>
+          </div>
+        </div>
+
+        <div class="result-stats">
+          <div class="result-stat">
+            <span>匹配导入</span>
+            <strong>{{ lastResult.matchedRows }}<em>行</em></strong>
+          </div>
+          <div class="result-stat">
+            <span>更新单元格</span>
+            <strong>{{ lastResult.updatedCells }}<em>个</em></strong>
+          </div>
+          <div class="result-stat">
+            <span>新增数据列</span>
+            <strong>{{ lastResult.addedColumns.length }}<em>列</em></strong>
+          </div>
+          <div class="result-stat" :class="{ 'is-warn': unmatchedRows.length > 0 }">
+            <span>未匹配</span>
+            <strong>{{ unmatchedRows.length }}<em>行</em></strong>
+          </div>
+        </div>
+
+        <p class="result-note">
+          点「完成」回到数据表。如果这份文件选错了，用「撤销本次导入」可以恢复导入前的名单。
+        </p>
+      </section>
+
+      <section v-if="lastResult.addedColumns.length" class="result-block">
+        <h4>新增的数据列</h4>
+        <div class="result-columns">
+          <span v-for="column in lastResult.addedColumns" :key="column" class="tag tag-green">
+            {{ column }}
+          </span>
+        </div>
+      </section>
+
+      <details
+        v-if="unmatchedRows.length > 0"
+        class="unmatched-block"
+        open
+        data-testid="merge-unmatched"
+      >
+        <summary>
+          <span>未匹配的 {{ unmatchedRows.length }} 行没有写进名单</span>
+          <span class="unmatched-toggle">展开 / 收起</span>
+        </summary>
+        <p class="unmatched-lead">
+          这些行在基准名单里找不到对应学生，或同名学生没有指定对应记录。需要保留的话，先导出再在
+          Excel 里处理；确认无误后点「完成」。
+        </p>
+        <div class="unmatched-table-wrap">
+          <table class="unmatched-table">
+            <thead>
+              <tr>
+                <th scope="col">行号</th>
+                <th scope="col">姓名</th>
+                <th scope="col">班级</th>
+                <th scope="col">学号</th>
+                <th scope="col">未匹配原因</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="row in unmatchedRows"
+                :key="`${row.rowNumber}-${row.matchedValue}-${row.reason}`"
+              >
+                <td class="num">{{ row.rowNumber }}</td>
+                <td>{{ row.name || '—' }}</td>
+                <td>{{ row.className || '—' }}</td>
+                <td class="num">{{ row.studentId || '—' }}</td>
+                <td>{{ describeUnmatchedRow(row) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-if="lastResult.unmatched.length > unmatchedRows.length" class="unmatched-more">
+          未匹配记录较多，这里只列出前 {{ unmatchedRows.length }} 行。
+        </p>
+        <button
+          class="btn btn-secondary result-export"
+          type="button"
+          data-testid="merge-export-unmatched"
+          @click="exportUnmatched"
+        >
+          <Download :size="15" />
+          导出为 CSV
+        </button>
+      </details>
+      <p v-else class="result-empty">这份文件的每一行都匹配到了基准名单，没有需要人工处理的行。</p>
+    </template>
+
+    <template v-else>
+      <div v-if="errorMessage" class="callout callout-danger merge-error">
+        <AlertTriangle :size="16" />
+        {{ errorMessage }}
       </div>
 
-      <FileDropzone
-        v-if="!currentFileName"
-        label="选择第二份 Excel"
-        hint="至少包含姓名或学号列，以及要合并的数据列"
-        test-id="score-file"
-        @select="loadFile"
-        @error="onFileError"
-      />
-      <template v-else>
-        <div class="file-bar">
-          <FileSpreadsheet :size="20" />
-          <div>
-            <strong>{{ currentFileName }}</strong>
-            <span>{{ sheetNames.length }} 个工作表</span>
-          </div>
+      <section class="sheet-section">
+        <div class="section-head">
+          <span class="section-no">1</span>
+          <h3>成绩文件与范围</h3>
         </div>
 
-        <div v-if="isLoading" class="callout">
-          <Loader2 class="spin" :size="16" />
-          正在读取 Excel 文件，请稍候…
-        </div>
-
+        <FileDropzone
+          v-if="!currentFileName"
+          label="选择第二份 Excel"
+          hint="至少包含姓名或学号列，以及要合并的数据列"
+          test-id="score-file"
+          @select="loadFile"
+          @error="onFileError"
+        />
         <template v-else>
-          <div class="two-col" style="margin-bottom: 14px">
-            <div v-if="sheetNames.length > 1">
-              <label class="field-label" for="score-sheet-select">工作表</label>
-              <select
-                id="score-sheet-select"
-                v-model="selectedSheet"
-                class="control"
-                data-testid="score-sheet-select"
-              >
-                <option v-for="sheet in sheetNames" :key="sheet" :value="sheet">{{ sheet }}</option>
-              </select>
-              <p class="field-hint">成绩数据通常位于第一个工作表。</p>
+          <div class="file-bar">
+            <FileSpreadsheet :size="20" />
+            <div>
+              <strong>{{ currentFileName }}</strong>
+              <span>{{ sheetNames.length }} 个工作表</span>
             </div>
-            <div v-else>
-              <span class="field-label">工作表</span>
-              <div class="file-bar" style="margin-bottom: 0">
-                <FileSpreadsheet :size="16" />
-                <div>
-                  <strong>{{ sheetNames[0] || '未命名' }}</strong>
-                  <span>单一工作表</span>
+          </div>
+
+          <div v-if="isLoading" class="callout">
+            <Loader2 class="spin" :size="16" />
+            正在读取 Excel 文件，请稍候…
+          </div>
+
+          <template v-else>
+            <div class="two-col" style="margin-bottom: 14px">
+              <div v-if="sheetNames.length > 1">
+                <label class="field-label" for="score-sheet-select">工作表</label>
+                <select
+                  id="score-sheet-select"
+                  v-model="selectedSheet"
+                  class="control"
+                  data-testid="score-sheet-select"
+                >
+                  <option v-for="sheet in sheetNames" :key="sheet" :value="sheet">{{ sheet }}</option>
+                </select>
+                <p class="field-hint">成绩数据通常位于第一个工作表。</p>
+              </div>
+              <div v-else>
+                <span class="field-label">工作表</span>
+                <div class="file-bar" style="margin-bottom: 0">
+                  <FileSpreadsheet :size="16" />
+                  <div>
+                    <strong>{{ sheetNames[0] || '未命名' }}</strong>
+                    <span>单一工作表</span>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div>
-              <span class="field-label">更换文件</span>
-              <FileDropzone
-                compact
-                label="换一份成绩 Excel"
-                hint=".xlsx / .xls"
-                test-id="score-file-replace"
-                @select="loadFile"
-                @error="onFileError"
-              />
-            </div>
-          </div>
-
-          <div class="two-col">
-            <div>
-              <label class="field-label" for="score-skip-rows">跳过顶部行</label>
-              <input
-                id="score-skip-rows"
-                v-model.number="skipRows"
-                class="control"
-                type="number"
-                min="0"
-                max="20"
-                step="1"
-                data-testid="score-skip-rows"
-              />
-              <p class="field-hint">跳过标题、说明等无用行。</p>
-            </div>
-            <div>
-              <label class="field-label" for="score-skip-footer">跳过尾部行</label>
-              <input
-                id="score-skip-footer"
-                v-model.number="skipFooter"
-                class="control"
-                type="number"
-                min="0"
-                max="50"
-                step="1"
-                data-testid="score-skip-footer"
-              />
-              <p class="field-hint">跳过汇总、统计等尾部行。</p>
-            </div>
-          </div>
-
-          <div class="preview-block">
-            <PreviewTable
-              :columns="scoreTable.columns"
-              :rows="scoreTable.rows"
-              :limit="12"
-              test-id="score-preview"
-            />
-          </div>
-        </template>
-      </template>
-    </section>
-
-    <template v-if="scoreColumns.length > 0">
-      <section class="sheet-section">
-        <div class="section-head">
-          <span class="section-no">2</span>
-          <h3>匹配列</h3>
-        </div>
-        <div class="match-row">
-          <div class="match-select">
-            <label class="field-label" for="match-col">用哪一列匹配学生？</label>
-            <select
-              id="match-col"
-              v-model="matchCol"
-              class="control"
-              data-testid="match-col"
-            >
-              <option v-for="column in scoreColumns" :key="column.name" :value="column.name">
-                {{ column.name }}
-              </option>
-            </select>
-            <p class="field-hint">{{ matchHint }}</p>
-          </div>
-          <span class="tag" :class="matchKind === 'unsupported' ? 'tag-seal' : 'tag-green'">
-            {{ matchTag }}
-          </span>
-        </div>
-        <div class="match-stats">
-          <span class="tag" :class="matchSummaryClass" data-testid="match-summary">
-            {{ matchSummaryText }}
-          </span>
-          <span v-if="currentMatchStat && currentMatchStat.matches === 0" class="match-note">
-            基准名单中没有对应记录的行会被自动忽略
-          </span>
-        </div>
-        <div v-if="suggestedMatch" class="callout callout-warn match-suggestion">
-          <AlertTriangle :size="16" />
-          <div>
-            <p>当前匹配列与基准名单的匹配率较低，建议改用「{{ suggestedMatch.column }}」。</p>
-            <button class="text-action" type="button" data-testid="use-suggested-match" @click="useSuggestedMatch">
-              改用「{{ suggestedMatch.column }}」（可匹配 {{ suggestedMatch.matches }} / {{ suggestedMatch.total }} 行）
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <section class="sheet-section">
-        <div class="section-head">
-          <span class="section-no">3</span>
-          <h3>要并入的数据列</h3>
-        </div>
-        <p class="section-desc">每个勾选的列都会作为独立列添加到基准名单。</p>
-        <p v-if="dataOptions.length > 12" class="field-hint" style="margin: -0.35rem 0 0.65rem 2.75rem">
-          该文件有 {{ dataOptions.length }} 个可选列，默认只选择主要成绩列；可按需勾选，或使用“全选数值列”。
-        </p>
-
-        <div v-if="dataOptions.length === 0" class="callout">
-          <AlertTriangle :size="16" />
-          这个文件除了匹配列之外没有其他列，请更换文件或调整跳过的行数。
-        </div>
-        <template v-else>
-          <div class="chip-tools">
-            <button
-              class="text-action"
-              type="button"
-              :disabled="numericOptions.length === 0"
-              @click="selectNumericColumns"
-            >
-              <Sparkles :size="13" />
-              全选数值列
-            </button>
-            <button class="text-action" type="button" @click="clearColumns">清空</button>
-            <span class="chip-count">已选 {{ selectedCols.length }} 列 / 可选 {{ dataOptions.length }} 列</span>
-          </div>
-
-          <div class="column-chips">
-            <button
-              v-for="(option, index) in dataOptions"
-              :key="option.name"
-              class="col-chip"
-              :class="{ 'is-selected': selectedSet.has(option.name) }"
-              type="button"
-              :aria-pressed="selectedSet.has(option.name)"
-              :data-testid="`data-col-${index}`"
-              @click="toggleColumn(option.name)"
-            >
-              <span class="chip-check">
-                <Check v-if="selectedSet.has(option.name)" :size="12" :stroke-width="2.6" />
-              </span>
-              <span class="chip-name">{{ option.name }}</span>
-              <span class="chip-kind">{{ option.kind === 'number' ? '数值' : '文本' }}</span>
-            </button>
-          </div>
-        </template>
-      </section>
-
-      <section v-if="conflicts.length > 0" class="sheet-section">
-        <div class="section-head">
-          <span class="section-no">4</span>
-          <h3>重名核对</h3>
-        </div>
-        <p class="section-desc">成绩表中出现同名学生，请为每一行选择对应的学生记录。</p>
-        <div class="callout callout-warn">
-          <AlertTriangle :size="16" />
-          <div>
-            发现 {{ conflicts.length }} 行成绩对应重名学生。{{ duplicateHint }}
-          </div>
-        </div>
-
-        <div class="dup-list">
-          <div v-for="group in conflictGroups" :key="group.name" class="dup-group">
-            <div class="dup-group-head">
-              <strong>{{ group.name }}</strong>
-              <span class="tag tag-amber">{{ group.conflicts.length }} 行成绩</span>
-              <span class="tag">{{ group.conflicts[0]?.candidateIndices.length }} 名同名学生</span>
-            </div>
-            <div v-for="conflict in group.conflicts" :key="conflict.key" class="dup-case">
-              <div class="dup-case-head">
-                第 {{ conflict.scoreRowIndex + 1 }} 条成绩
+              <div>
+                <span class="field-label">更换文件</span>
+                <FileDropzone
+                  compact
+                  label="换一份成绩 Excel"
+                  hint=".xlsx / .xls"
+                  test-id="score-file-replace"
+                  @select="loadFile"
+                  @error="onFileError"
+                />
               </div>
-              <div class="dup-row">
-                <span v-for="column in conflictColumns" :key="column">
-                  <em>{{ column }}</em>
-                  {{ visibleValue(conflict.scoreRow, column) }}
-                </span>
-              </div>
-              <label class="dup-select">
-                <span>
-                  对应学生
-                  <span v-if="conflict.preferredIndex !== undefined" class="tag tag-green dup-auto-tag">
-                    已按班级对应
-                  </span>
-                </span>
-                <select
-                  v-model.number="duplicateSelections[conflict.key]"
+            </div>
+
+            <div class="two-col">
+              <div>
+                <label class="field-label" for="score-skip-rows">跳过顶部行</label>
+                <input
+                  id="score-skip-rows"
+                  v-model.number="skipRows"
                   class="control"
-                  :data-testid="`dup-select-${conflict.scoreRowIndex}`"
-                >
-                  <option
-                    v-for="candidate in conflict.candidateIndices"
-                    :key="candidate"
-                    :value="candidate"
-                  >
-                    {{ candidateLabel(candidate) }}
-                  </option>
-                </select>
-              </label>
+                  type="number"
+                  min="0"
+                  max="20"
+                  step="1"
+                  data-testid="score-skip-rows"
+                />
+                <p class="field-hint">跳过标题、说明等无用行。</p>
+              </div>
+              <div>
+                <label class="field-label" for="score-skip-footer">跳过尾部行</label>
+                <input
+                  id="score-skip-footer"
+                  v-model.number="skipFooter"
+                  class="control"
+                  type="number"
+                  min="0"
+                  max="50"
+                  step="1"
+                  data-testid="score-skip-footer"
+                />
+                <p class="field-hint">跳过汇总、统计等尾部行。</p>
+              </div>
+            </div>
+
+            <div class="preview-block">
+              <PreviewTable
+                :columns="scoreTable.columns"
+                :rows="scoreTable.rows"
+                :limit="12"
+                test-id="score-preview"
+              />
+            </div>
+          </template>
+        </template>
+      </section>
+
+      <template v-if="scoreColumns.length > 0">
+        <section class="sheet-section">
+          <div class="section-head">
+            <span class="section-no">2</span>
+            <h3>匹配列</h3>
+          </div>
+          <div class="match-row">
+            <div class="match-select">
+              <label class="field-label" for="match-col">用哪一列匹配学生？</label>
+              <select
+                id="match-col"
+                v-model="matchCol"
+                class="control"
+                data-testid="match-col"
+              >
+                <option v-for="column in scoreColumns" :key="column.name" :value="column.name">
+                  {{ column.name }}
+                </option>
+              </select>
+              <p class="field-hint">{{ matchHint }}</p>
+            </div>
+            <span class="tag" :class="matchKind === 'unsupported' ? 'tag-seal' : 'tag-green'">
+              {{ matchTag }}
+            </span>
+          </div>
+          <div class="match-stats">
+            <span class="tag" :class="matchSummaryClass" data-testid="match-summary">
+              {{ matchSummaryText }}
+            </span>
+            <span v-if="currentMatchStat && currentMatchStat.matches === 0" class="match-note">
+              基准名单中没有对应记录的行会被自动忽略
+            </span>
+          </div>
+          <div v-if="suggestedMatch" class="callout callout-warn match-suggestion">
+            <AlertTriangle :size="16" />
+            <div>
+              <p>当前匹配列与基准名单的匹配率较低，建议改用「{{ suggestedMatch.column }}」。</p>
+              <button class="text-action" type="button" data-testid="use-suggested-match" @click="useSuggestedMatch">
+                改用「{{ suggestedMatch.column }}」（可匹配 {{ suggestedMatch.matches }} / {{ suggestedMatch.total }} 行）
+              </button>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+
+        <section class="sheet-section">
+          <div class="section-head">
+            <span class="section-no">3</span>
+            <h3>要并入的数据列</h3>
+          </div>
+          <p class="section-desc">每个勾选的列都会作为独立列添加到基准名单。</p>
+          <p v-if="dataOptions.length > 12" class="field-hint" style="margin: -0.35rem 0 0.65rem 2.75rem">
+            该文件有 {{ dataOptions.length }} 个可选列，默认只选择主要成绩列；可按需勾选，或使用“全选数值列”。
+          </p>
+
+          <div v-if="dataOptions.length === 0" class="callout">
+            <AlertTriangle :size="16" />
+            这个文件除了匹配列之外没有其他列，请更换文件或调整跳过的行数。
+          </div>
+          <template v-else>
+            <div class="chip-tools">
+              <button
+                class="text-action"
+                type="button"
+                :disabled="numericOptions.length === 0"
+                @click="selectNumericColumns"
+              >
+                <Sparkles :size="13" />
+                全选数值列
+              </button>
+              <button class="text-action" type="button" @click="clearColumns">清空</button>
+              <span class="chip-count">已选 {{ selectedCols.length }} 列 / 可选 {{ dataOptions.length }} 列</span>
+            </div>
+
+            <div class="column-chips">
+              <button
+                v-for="(option, index) in dataOptions"
+                :key="option.name"
+                class="col-chip"
+                :class="{ 'is-selected': selectedSet.has(option.name) }"
+                type="button"
+                :aria-pressed="selectedSet.has(option.name)"
+                :data-testid="`data-col-${index}`"
+                @click="toggleColumn(option.name)"
+              >
+                <span class="chip-check">
+                  <Check v-if="selectedSet.has(option.name)" :size="12" :stroke-width="2.6" />
+                </span>
+                <span class="chip-name">{{ option.name }}</span>
+                <span class="chip-kind">{{ option.kind === 'number' ? '数值' : '文本' }}</span>
+              </button>
+            </div>
+          </template>
+        </section>
+
+        <section v-if="conflicts.length > 0" class="sheet-section">
+          <div class="section-head">
+            <span class="section-no">4</span>
+            <h3>重名核对</h3>
+          </div>
+          <p class="section-desc">成绩表中出现同名学生，请为每一行选择对应的学生记录。</p>
+          <div class="callout callout-warn">
+            <AlertTriangle :size="16" />
+            <div>
+              发现 {{ conflicts.length }} 行成绩对应重名学生。{{ duplicateHint }}
+            </div>
+          </div>
+
+          <div class="dup-list">
+            <div v-for="group in conflictGroups" :key="group.name" class="dup-group">
+              <div class="dup-group-head">
+                <strong>{{ group.name }}</strong>
+                <span class="tag tag-amber">{{ group.conflicts.length }} 行成绩</span>
+                <span class="tag">{{ group.conflicts[0]?.candidateIndices.length }} 名同名学生</span>
+              </div>
+              <div v-for="conflict in group.conflicts" :key="conflict.key" class="dup-case">
+                <div class="dup-case-head">
+                  第 {{ conflict.scoreRowIndex + 1 }} 条成绩
+                </div>
+                <div class="dup-row">
+                  <span v-for="column in conflictColumns" :key="column">
+                    <em>{{ column }}</em>
+                    {{ visibleValue(conflict.scoreRow, column) }}
+                  </span>
+                </div>
+                <label class="dup-select">
+                  <span>
+                    对应学生
+                    <span v-if="conflict.preferredIndex !== undefined" class="tag tag-green dup-auto-tag">
+                      已按班级对应
+                    </span>
+                  </span>
+                  <select
+                    v-model.number="duplicateSelections[conflict.key]"
+                    class="control"
+                    :data-testid="`dup-select-${conflict.scoreRowIndex}`"
+                  >
+                    <option
+                      v-for="candidate in conflict.candidateIndices"
+                      :key="candidate"
+                      :value="candidate"
+                    >
+                      {{ candidateLabel(candidate) }}
+                    </option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          </div>
+        </section>
+      </template>
     </template>
 
     <template #footer>
       <span class="footer-note">
         <template v-if="lastResult">
-          上次导入：按基准名单导入 {{ lastResult.matchedRows }} 行<template v-if="lastResult.unmatched.length"> · 忽略 {{ lastResult.unmatched.length }} 行</template>
+          已写入当前名单
+          <template v-if="unmatchedRows.length"> · {{ unmatchedRows.length }} 行未匹配</template>
         </template>
         <template v-else>
           已选 {{ selectedCols.length }} 列
@@ -664,47 +831,243 @@ function visibleValue(row: DataRow, column: string): string {
         </template>
       </span>
       <div class="footer-actions">
-        <button class="btn btn-ghost" type="button" @click="$emit('close')">取消</button>
-        <button
-          v-if="lastResult"
-          class="btn btn-primary"
-          type="button"
-          data-testid="merge-done"
-          @click="$emit('close')"
-        >
-          完成
-        </button>
-        <button
-          v-else
-          class="btn btn-primary"
-          type="button"
-          :disabled="!canImport"
-          data-testid="merge-import"
-          @click="doImport"
-        >
-          {{ selectedCols.length > 0 ? `导入 ${selectedCols.length} 列` : '导入数据列' }}
-        </button>
+        <template v-if="lastResult">
+          <button
+            class="btn btn-ghost"
+            type="button"
+            data-testid="merge-undo"
+            title="把名单恢复到本次导入之前的状态"
+            @click="undoImport"
+          >
+            撤销本次导入
+          </button>
+          <button
+            class="btn btn-primary"
+            type="button"
+            data-testid="merge-done"
+            @click="finish"
+          >
+            完成
+          </button>
+        </template>
+        <template v-else>
+          <button class="btn btn-ghost" type="button" @click="$emit('close')">取消</button>
+          <button
+            class="btn btn-primary"
+            type="button"
+            :disabled="!canImport"
+            data-testid="merge-import"
+            @click="doImport"
+          >
+            {{ selectedCols.length > 0 ? `导入 ${selectedCols.length} 列` : '导入数据列' }}
+          </button>
+        </template>
       </div>
     </template>
   </BaseSheet>
 </template>
 
 <style scoped>
-.merge-result,
 .merge-error {
   margin-bottom: 1rem;
 }
 
-.merge-result strong {
+.merge-undo {
+  margin-bottom: 1rem;
+}
+
+.merge-result {
+  margin-bottom: 1.1rem;
+  padding: 1.1rem 1.2rem;
+  border: 1px solid #c3dbcc;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #f3faf5, var(--surface));
+}
+
+.result-head {
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
+}
+
+.result-icon {
+  flex: none;
+  margin-top: 2px;
+  color: #2f7d5b;
+}
+
+.result-head strong {
   display: block;
-  font-size: 13px;
+  font-size: 15.5px;
   font-weight: 600;
 }
 
-.merge-result p {
+.result-head p {
   margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.result-meta {
+  color: var(--muted) !important;
+  font-size: 11px !important;
+  opacity: 0.85;
+}
+
+.result-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 0.55rem;
+  margin-top: 1rem;
+}
+
+.result-stat {
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.result-stat span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.result-stat strong {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--ink);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+.result-stat em {
+  margin-left: 0.18rem;
+  color: var(--muted);
   font-size: 12px;
-  line-height: 1.5;
+  font-style: normal;
+  font-weight: 500;
+}
+
+.result-stat.is-warn {
+  border-color: var(--amber-line);
+  background: var(--amber-bg);
+}
+
+.result-stat.is-warn strong {
+  color: var(--amber);
+}
+
+.result-note {
+  margin-top: 0.85rem;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.result-block {
+  margin-bottom: 1.1rem;
+}
+
+.result-block h4 {
+  margin-bottom: 0.45rem;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.result-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.unmatched-block {
+  margin-bottom: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.unmatched-block summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0.9rem;
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.unmatched-toggle {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.unmatched-lead {
+  padding: 0 0.9rem;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.unmatched-table-wrap {
+  max-height: 280px;
+  margin: 0.6rem 0.9rem 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.unmatched-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.unmatched-table th {
+  position: sticky;
+  top: 0;
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-weight: 600;
+  text-align: left;
+}
+
+.unmatched-table td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-soft);
+}
+
+.unmatched-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.unmatched-table .num {
+  font-variant-numeric: tabular-nums;
+}
+
+.unmatched-more {
+  padding: 0.4rem 0.9rem 0;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.result-export {
+  margin: 0.7rem 0.9rem 0.9rem;
+}
+
+.result-empty {
+  margin-bottom: 1rem;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .preview-block {
@@ -943,5 +1306,15 @@ function visibleValue(row: DataRow, column: string): string {
   max-width: 320px;
   height: 33px;
   font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .result-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .result-stat strong {
+    font-size: 22px;
+  }
 }
 </style>

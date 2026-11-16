@@ -10,6 +10,7 @@ import SummaryStrip from './SummaryStrip.vue'
 defineEmits<{
   'roster-file': [file: File]
   'open-merge': []
+  copy: [focus: { sheet: string; className: string }]
   export: []
 }>()
 
@@ -91,6 +92,7 @@ const sampleRows = [
         :columns="session.columns"
         :rows="session.rows"
         @open-merge="$emit('open-merge')"
+        @copy="$emit('copy', $event)"
         @export="$emit('export')"
       />
     </template>

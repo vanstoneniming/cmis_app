@@ -2,11 +2,12 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import type { MergeReport } from './types'
-import { exportTable, timestampSuffix } from './lib/excel'
+import { exportSheets, timestampSuffix } from './lib/excel'
 import { useSessionStore } from './stores/session'
 import { useToastStore } from './stores/toasts'
 import AppHeader from './components/AppHeader.vue'
 import ConfirmDialog from './components/ConfirmDialog.vue'
+import CopySheet from './components/CopySheet.vue'
 import DataWorkspace from './components/DataWorkspace.vue'
 import MergeSheet from './components/MergeSheet.vue'
 import RosterImportSheet from './components/RosterImportSheet.vue'
@@ -20,6 +21,8 @@ const { hasData, studentCount, dataColumns, rosterFileName } = storeToRefs(sessi
 const rosterFile = ref<File | null>(null)
 const rosterOpen = ref(false)
 const mergeOpen = ref(false)
+const copyOpen = ref(false)
+const copyFocus = ref<{ sheet: string; className: string } | null>(null)
 const clearPending = ref(false)
 let persistTimer: number | undefined
 
@@ -44,12 +47,20 @@ function closeRoster() {
   rosterFile.value = null
 }
 
-function onRosterLoaded(payload: { count: number; classes: number; warnings: string[] }) {
+function onRosterLoaded(payload: {
+  count: number
+  classes: number
+  sheets: number
+  warnings: string[]
+}) {
   rosterOpen.value = false
   rosterFile.value = null
+  const parts: string[] = []
+  if (payload.classes > 0) parts.push(`${payload.classes} 个班级已识别`)
+  if (payload.sheets > 1) parts.push(`${payload.sheets} 个工作表已保留，导出时可原样同步`)
   toasts.success(
     `已加载 ${payload.count} 名学生`,
-    payload.classes > 0 ? `${payload.classes} 个班级已识别` : '可以继续导入成绩数据列',
+    parts.length > 0 ? parts.join('，') : '可以继续导入成绩数据列',
   )
   payload.warnings.slice(0, 2).forEach((warning) => {
     toasts.info('名单提示', warning)
@@ -64,12 +75,21 @@ function openMerge() {
   mergeOpen.value = true
 }
 
+function openCopy(focus?: { sheet: string; className: string }) {
+  if (!hasData.value) {
+    toasts.info('先导入学生名单', '有数据后才能按工作表复制。')
+    return
+  }
+  copyFocus.value = focus ?? null
+  copyOpen.value = true
+}
+
 function onMergeImported(report: MergeReport) {
-  const ignored = report.unmatched.length
+  const ignored = report.unmatchedRows?.length ?? report.unmatched.length
   toasts.success(
     report.title,
     ignored > 0
-      ? `已忽略 ${ignored} 行基准名单中没有的记录。`
+      ? `${ignored} 行未匹配，已在报告里列出。`
       : `${report.addedColumns.length} 个数据列已加入名单。`,
   )
 }
@@ -77,11 +97,10 @@ function onMergeImported(report: MergeReport) {
 async function exportExcel() {
   if (!hasData.value) return
   try {
-    await exportTable(
-      { columns: session.columns, rows: session.rows },
-      `数据统计_${timestampSuffix()}.xlsx`,
-    )
-    toasts.success('Excel 已导出', `共 ${session.rows.length} 名学生`)
+    const sheets = session.sheetTables
+    await exportSheets(sheets, `数据统计_${timestampSuffix()}.xlsx`)
+    const sheetNote = sheets.length > 1 ? `，${sheets.length} 个工作表与原文件对应` : ''
+    toasts.success('Excel 已导出', `共 ${session.rows.length} 名学生${sheetNote}`)
   } catch (error) {
     toasts.error(
       '导出失败',
@@ -100,6 +119,7 @@ function confirmClear() {
   rosterOpen.value = false
   rosterFile.value = null
   mergeOpen.value = false
+  copyOpen.value = false
   clearPending.value = false
   toasts.info('已清空当前会话', '可以重新导入一份名单。')
 }
@@ -138,6 +158,7 @@ onBeforeUnmount(() => {
           :data-column-count="dataColumns.length"
           @roster-file="openRoster"
           @open-merge="openMerge"
+          @copy="openCopy"
           @export="exportExcel"
           @clear="requestClear"
         />
@@ -146,6 +167,7 @@ onBeforeUnmount(() => {
         <DataWorkspace
           @roster-file="openRoster"
           @open-merge="openMerge"
+          @copy="openCopy"
           @export="exportExcel"
         />
       </div>
@@ -158,6 +180,7 @@ onBeforeUnmount(() => {
       @loaded="onRosterLoaded"
     />
     <MergeSheet v-if="mergeOpen" @close="mergeOpen = false" @imported="onMergeImported" />
+    <CopySheet v-if="copyOpen" :focus="copyFocus" @close="copyOpen = false" />
     <ConfirmDialog
       v-if="clearPending"
       title="清空当前会话？"

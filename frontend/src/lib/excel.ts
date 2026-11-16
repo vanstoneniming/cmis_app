@@ -1,6 +1,7 @@
 import type { WorkBook, WorkSheet } from 'xlsx'
 import type { CellValue, TableData } from '../types'
 import { displayCell, formatNumber, normalizeCell } from './cells'
+import { safeSheetName } from './sheets'
 
 type XlsxModule = typeof import('xlsx')
 
@@ -56,20 +57,33 @@ export function readGrid(workbook: WorkBook, sheetName: string): CellValue[][] {
   return sheetToGrid(sheet)
 }
 
-export async function exportTable(table: TableData, fileName: string): Promise<void> {
+export interface SheetExport {
+  name: string
+  table: TableData
+}
+
+/** 按工作表导出：一张表对应一个工作表，名字与顺序尽量保持和基础文件一致。 */
+export async function exportSheets(sheets: SheetExport[], fileName: string): Promise<void> {
   const XLSX = await loadXlsx()
-  const header = table.columns
-  const rows = table.rows.map((row) => header.map((column) => row[column] ?? null))
-  const sheet = XLSX.utils.aoa_to_sheet([header, ...rows])
-  sheet['!cols'] = header.map((column) => {
-    const sampleLengths = table.rows
-      .slice(0, 80)
-      .map((row) => displayCell(row[column]).length)
-    const longest = Math.max(column.length + 2, ...sampleLengths)
-    return { wch: Math.min(32, Math.max(8, longest + 2)) }
-  })
   const workbook = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(workbook, sheet, '数据统计')
+  const used = new Set<string>()
+
+  const source = sheets.length > 0 ? sheets : [{ name: '', table: { columns: [], rows: [] } }]
+  source.forEach((entry, index) => {
+    const header = entry.table.columns
+    const rows = entry.table.rows.map((row) => header.map((column) => row[column] ?? null))
+    const sheet = XLSX.utils.aoa_to_sheet([header, ...rows])
+    sheet['!cols'] = header.map((column) => {
+      const sampleLengths = entry.table.rows
+        .slice(0, 80)
+        .map((row) => displayCell(row[column]).length)
+      const longest = Math.max(column.length + 2, ...sampleLengths)
+      return { wch: Math.min(32, Math.max(8, longest + 2)) }
+    })
+    const name = safeSheetName(entry.name, used, `工作表${index + 1}`)
+    XLSX.utils.book_append_sheet(workbook, sheet, name)
+  })
+
   const output = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })
   const blob = new Blob([output], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

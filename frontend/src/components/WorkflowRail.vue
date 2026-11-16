@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowRight, Check, Download, Layers, Trash2 } from 'lucide-vue-next'
+import { ArrowRight, Check, ClipboardCopy, Download, Layers, Trash2 } from 'lucide-vue-next'
 import FileDropzone from './FileDropzone.vue'
 
 defineProps<{
@@ -12,6 +12,7 @@ defineProps<{
 defineEmits<{
   'roster-file': [file: File]
   'open-merge': []
+  copy: []
   export: []
   clear: []
 }>()
@@ -76,9 +77,20 @@ defineEmits<{
         <span class="step-marker" aria-hidden="true">03</span>
         <div class="step-body">
           <h3>校对导出</h3>
-          <p class="step-desc">在表格中直接修改，最后导出 Excel。</p>
+          <p class="step-desc">在表格中直接修改；复制到剪贴板粘回原文件，或导出 Excel。</p>
           <button
             class="rail-action rail-action-light"
+            type="button"
+            :disabled="!hasData"
+            data-testid="rail-copy"
+            @click="$emit('copy')"
+          >
+            <ClipboardCopy :size="16" />
+            <span>按工作表复制</span>
+            <ArrowRight class="rail-action-arrow" :size="15" />
+          </button>
+          <button
+            class="rail-action"
             type="button"
             :disabled="!hasData"
             data-testid="rail-export"

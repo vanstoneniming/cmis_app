@@ -9,6 +9,7 @@ import type {
   RosterDetection,
   RosterMapping,
   TableData,
+  UnmatchedRow,
 } from '../types'
 import {
   displayCell,
@@ -510,6 +511,14 @@ export interface MergeOptionsWithMeta extends MergeOptions {
   scoreColumns: ColumnMeta[]
 }
 
+/** 未匹配行的中文原因，弹窗与报告横幅共用 */
+export function describeUnmatchedRow(row: UnmatchedRow): string {
+  if (row.reason === 'ambiguous') {
+    return `同名学生 ${row.candidates} 人，未指定对应记录`
+  }
+  return row.matchedKind === 'id' ? '基准名单中没有该学号' : '基准名单中没有该姓名'
+}
+
 export function mergeData(options: MergeOptionsWithMeta): MergeResult {
   const {
     base,
@@ -520,6 +529,7 @@ export function mergeData(options: MergeOptionsWithMeta): MergeResult {
     duplicateSelections,
   } = options
   const unmatched: string[] = []
+  const unmatchedRows: UnmatchedRow[] = []
 
   const matchKind = matchKindOf(matchColumn)
   if (!matchColumn || !score.columns.includes(matchColumn)) {
@@ -530,6 +540,7 @@ export function mergeData(options: MergeOptionsWithMeta): MergeResult {
       matchedRows: 0,
       updatedCells: 0,
       unmatched: [],
+      unmatchedRows: [],
       error: '请选择用于匹配的列',
     }
   }
@@ -541,6 +552,7 @@ export function mergeData(options: MergeOptionsWithMeta): MergeResult {
       matchedRows: 0,
       updatedCells: 0,
       unmatched: [],
+      unmatchedRows: [],
       error: '匹配列需要是姓名或学号类列，请重新选择',
     }
   }
@@ -552,9 +564,28 @@ export function mergeData(options: MergeOptionsWithMeta): MergeResult {
       matchedRows: 0,
       updatedCells: 0,
       unmatched: [],
+      unmatchedRows: [],
       error: '请至少选择一个要并入的数据列',
     }
   }
+
+  const nameColumn = score.columns.find((column) => matchKindOf(column) === 'name') ?? ''
+  const idColumn = score.columns.find((column) => matchKindOf(column) === 'id') ?? ''
+  const classColumn =
+    score.columns.find((column) => looksLikeClassColumn(column)) ?? ''
+  const identityOf = (row: DataRow, value: CellValue) => ({
+    name: nameColumn
+      ? displayCell(row[nameColumn] ?? null)
+      : matchKind === 'name'
+        ? displayCell(value)
+        : '',
+    className: classColumn ? displayCell(row[classColumn] ?? null) : '',
+    studentId: idColumn
+      ? displayCell(row[idColumn] ?? null)
+      : matchKind === 'id'
+        ? displayCell(value)
+        : '',
+  })
 
   const table: TableData = {
     columns: base.columns.slice(),
@@ -615,9 +646,18 @@ export function mergeData(options: MergeOptionsWithMeta): MergeResult {
 
     if (candidates.length === 0) {
       if (unmatched.length < 200) {
+        const matchedValue = displayCell(value)
         unmatched.push(
-          `第 ${rowIndex + 1} 行：未找到${matchKind === 'id' ? '学号' : '姓名'}「${displayCell(value)}」`,
+          `第 ${rowIndex + 1} 行：未找到${matchKind === 'id' ? '学号' : '姓名'}「${matchedValue}」`,
         )
+        unmatchedRows.push({
+          rowNumber: rowIndex + 1,
+          matchedKind: matchKind,
+          matchedValue,
+          ...identityOf(row, value),
+          reason: 'not-found',
+          candidates: 0,
+        })
       }
       return
     }
@@ -627,7 +667,18 @@ export function mergeData(options: MergeOptionsWithMeta): MergeResult {
       const selected = duplicateSelections[conflictKey(key, rowIndex)]
       if (selected === undefined || !candidates.includes(selected)) {
         if (unmatched.length < 200) {
-          unmatched.push(`第 ${rowIndex + 1} 行：「${displayCell(value)}」有 ${candidates.length} 个同名学生，请选择对应记录`)
+          const matchedValue = displayCell(value)
+          unmatched.push(
+            `第 ${rowIndex + 1} 行：「${matchedValue}」有 ${candidates.length} 个同名学生，请选择对应记录`,
+          )
+          unmatchedRows.push({
+            rowNumber: rowIndex + 1,
+            matchedKind: matchKind,
+            matchedValue,
+            ...identityOf(row, value),
+            reason: 'ambiguous',
+            candidates: candidates.length,
+          })
         }
         return
       }
@@ -652,6 +703,7 @@ export function mergeData(options: MergeOptionsWithMeta): MergeResult {
     matchedRows: matched.size,
     updatedCells,
     unmatched,
+    unmatchedRows,
     error: null,
   }
 }

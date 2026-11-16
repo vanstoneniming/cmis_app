@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { Download, Layers, Search } from 'lucide-vue-next'
+import { computed, ref, watch } from 'vue'
+import { ClipboardCopy, Download, Layers, Search } from 'lucide-vue-next'
 import type { CellValue, DataRow } from '../types'
 import { BASE_COLUMNS } from '../types'
 import { displayCell, isEmptyCell } from '../lib/cells'
@@ -13,15 +13,21 @@ const props = defineProps<{
 
 defineEmits<{
   'open-merge': []
+  copy: [focus: { sheet: string; className: string }]
   export: []
 }>()
 
 const session = useSessionStore()
 const query = ref('')
 const classFilter = ref('')
+const sheetFilter = ref('')
 
 const dataColumns = computed(() =>
   props.columns.filter((column) => !(BASE_COLUMNS as readonly string[]).includes(column)),
+)
+
+const sheetOptions = computed(() =>
+  session.sheetGroups.map((group) => group.name).filter((name) => Boolean(name)),
 )
 
 const classOptions = computed(() => {
@@ -37,7 +43,10 @@ const filteredEntries = computed(() => {
   const needle = query.value.trim().toLowerCase()
   return props.rows
     .map((row, index) => ({ row, index }))
-    .filter(({ row }) => {
+    .filter(({ row, index }) => {
+      if (sheetFilter.value && (session.rowSheets[index] ?? '') !== sheetFilter.value) {
+        return false
+      }
       if (classFilter.value && displayCell(row['班级'] ?? null).trim() !== classFilter.value) {
         return false
       }
@@ -51,6 +60,11 @@ const filteredEntries = computed(() => {
         .toLowerCase()
       return haystack.includes(needle)
     })
+})
+
+watch([sheetOptions, classOptions], () => {
+  if (sheetFilter.value && !sheetOptions.value.includes(sheetFilter.value)) sheetFilter.value = ''
+  if (classFilter.value && !classOptions.value.includes(classFilter.value)) classFilter.value = ''
 })
 
 const columnKinds = computed(() => {
@@ -110,12 +124,31 @@ function blurTarget(event: Event) {
           <span class="sr-only">搜索学生</span>
           <input v-model="query" type="search" placeholder="搜索姓名、学号或班级" />
         </label>
+        <select
+          v-if="session.hasSheetInfo && sheetOptions.length > 1"
+          v-model="sheetFilter"
+          class="control class-filter"
+          aria-label="按工作表筛选"
+          data-testid="sheet-filter"
+        >
+          <option value="">全部工作表</option>
+          <option v-for="name in sheetOptions" :key="name" :value="name">{{ name }}</option>
+        </select>
         <select v-model="classFilter" class="control class-filter" aria-label="按班级筛选">
           <option value="">全部班级</option>
           <option v-for="className in classOptions" :key="className" :value="className">
             {{ className }}
           </option>
         </select>
+        <button
+          class="btn btn-secondary btn-sm"
+          type="button"
+          data-testid="table-copy"
+          @click="$emit('copy', { sheet: sheetFilter, className: classFilter })"
+        >
+          <ClipboardCopy :size="15" />
+          复制数据
+        </button>
         <button class="btn btn-secondary btn-sm" type="button" data-testid="table-export" @click="$emit('export')">
           <Download :size="15" />
           导出
@@ -178,7 +211,7 @@ function blurTarget(event: Event) {
           </tr>
           <tr v-if="filteredEntries.length === 0">
             <td :colspan="dataColumns.length + 4" class="empty-row">
-              没有匹配的学生，试试清空搜索或切换班级。
+              没有匹配的学生，试试清空搜索或切换工作表、班级。
             </td>
           </tr>
         </tbody>
